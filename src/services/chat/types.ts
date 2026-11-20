@@ -77,6 +77,10 @@ export type AssistantMessage = MessageBranch & {
   id: string
   role: 'assistant'
   createdAt: number
+  /** 收到的第一个内容块时间；用于计算 TTFT 与输出速度，旧记录缺失 */
+  firstTokenAt?: number
+  /** 回复结束（settle）时间；用于计算输出速度，旧记录缺失 */
+  completedAt?: number
   /** 未记录模型时为 null，续写使用当前默认模型。 */
   model: ChatModel | null
   /** 请求时是否开启深度思考 */

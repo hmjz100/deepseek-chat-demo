@@ -1,6 +1,8 @@
 import type { ChatTarget } from '../providerRuntime.js'
 import { resizeUploadImage } from '../../utils/resizeUploadImage.js'
+import { streamGemini } from './gemini.js'
 import { streamOpenAI } from './openai.js'
+import { streamOpenAIResponses } from './openaiResponses.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
 import { ApiError, readErrorResponse, request } from './transport.js'
@@ -169,9 +171,17 @@ export async function* streamMessage(
   body: CreateMessageRequest,
   signal: AbortSignal
 ): AsyncGenerator<MessageStreamEvent> {
-  if (target.protocol === 'openai-completions') {
-    yield* streamOpenAI(target, body, signal)
-    return
+  switch (target.protocol) {
+    case 'openai-completions':
+      yield* streamOpenAI(target, body, signal)
+      return
+    case 'openai-responses':
+      yield* streamOpenAIResponses(target, body, signal)
+      return
+    case 'google-generative-ai':
+      yield* streamGemini(target, body, signal)
+      return
+    default:
+      yield* streamAnthropic(target, body, signal)
   }
-  yield* streamAnthropic(target, body, signal)
 }

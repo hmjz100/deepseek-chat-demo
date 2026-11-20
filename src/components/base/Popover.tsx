@@ -71,6 +71,8 @@ export type PopoverProps = {
     onMouseLeave: (event: React.MouseEvent) => void
   }) => ReactNode
   floatingWrapperClassName?: string
+  /** 浮层 z-index；默认 1000，弹窗内的浮层需要更高 */
+  zIndex?: number
 }
 
 /**
@@ -97,6 +99,7 @@ export const Popover = ({
   renderTrigger,
   renderFloating,
   floatingWrapperClassName,
+  zIndex = 1000,
 }: PopoverProps) => {
   const [openState, setOpenState] = useState(false)
   const referenceRef = useRef<HTMLElement | null>(null)
@@ -242,13 +245,13 @@ export const Popover = ({
       {renderTrigger({ domRef: referenceRef, domProps, isOpen })}
       {keepWrapper
         ? createPortal(
-            <div className="ds-floating-container" style={{ zIndex: 1000 }}>
+            <div className="ds-floating-container" style={{ zIndex }}>
               <div
                 ref={floatingRef}
                 className={['ds-floating-position-wrapper', 'ds-theme', floatingWrapperClassName]
                   .filter(Boolean)
                   .join(' ')}
-                style={{ zIndex: 1000 }}
+                style={{ zIndex }}
               >
                 <FadeInZoomIn
                   in={isOpen}

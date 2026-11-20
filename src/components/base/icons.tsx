@@ -581,3 +581,42 @@ export const IconToastError16 = () => (
     />
   </svg>
 )
+
+/** 会话统计：仪表盘，14px 线框 */
+export const IconGaugeOutline14 = () => (
+  <svg width={14} height={14} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M2.1 11.2a5.6 5.6 0 1 1 9.8 0M7 7l2.6-2.6"
+      stroke="currentColor"
+      strokeWidth={1.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx={7} cy={7} r={1} fill="currentColor" />
+  </svg>
+)
+
+/** Token 用量：数据库圆柱，14px 线框 */
+export const IconDatabaseOutline14 = () => (
+  <svg width={14} height={14} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx={7} cy={3.2} rx={4.4} ry={1.7} stroke="currentColor" strokeWidth={1.2} />
+    <path
+      d="M2.6 3.2v3.6c0 .94 1.97 1.7 4.4 1.7s4.4-.76 4.4-1.7V3.2M2.6 6.8v3.6c0 .94 1.97 1.7 4.4 1.7s4.4-.76 4.4-1.7V6.8"
+      stroke="currentColor"
+      strokeWidth={1.2}
+      strokeLinecap="round"
+    />
+  </svg>
+)
+
+/** 模型图标占位：四角星，14px 线框 */
+export const IconModelOutline14 = () => (
+  <svg width={14} height={14} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M7 1.5c.35 2.7 2.3 4.65 5 5-2.7.35-4.65 2.3-5 5-.35-2.7-2.3-4.65-5-5 2.7-.35 4.65-2.3 5-5Z"
+      stroke="currentColor"
+      strokeWidth={1.2}
+      strokeLinejoin="round"
+    />
+  </svg>
+)

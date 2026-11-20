@@ -3,11 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useIsMobile } from '../../app/viewport.js'
 import { useTranslate } from '../../i18n/index.js'
 import { setProvider, setThinkingEffort, useSettings, type ThinkingEffort } from '../../services/settings.js'
-import { enabledProviders, useProviders, type CustomProvider } from '../../services/providers.js'
+import { enabledProviders, useProviders, type CustomProvider, type ProviderModel } from '../../services/providers.js'
 import {
   findCatalogModel,
   loadModelsDev,
-  matchCatalogProvider,
+  resolveModelVendor,
   useModelsDev,
   type ModelsDevProvider,
 } from '../../services/modelsDev.js'
@@ -56,19 +56,21 @@ export type ModelEntry = {
   reasoning: boolean
 }
 
-/** 按厂商在目录里找模型：先认提供商（按 baseUrl），再在它名下按 id 找 */
+/** 按模型解析厂商；用户在设置里显式选择的图标优先 */
 const resolveCustomVendor = (
   provider: CustomProvider,
-  modelId: string,
+  model: ProviderModel,
   catalog: Record<string, ModelsDevProvider>
-): string | null => {
-  const matched = matchCatalogProvider(
-    { id: provider.id, name: provider.name, baseUrl: provider.baseUrl },
+): string | null =>
+  model.icon ??
+  resolveModelVendor(
+    {
+      modelId: model.id,
+      modelName: model.name,
+      provider: { id: provider.id, name: provider.name, baseUrl: provider.baseUrl },
+    },
     catalog
   )
-  const found = findCatalogModel(matched, modelId, catalog)
-  return found?.provider.id ?? matched?.id ?? null
-}
 
 /** 组装可选模型：内置 DeepSeek + 每个启用的自定义提供商 */
 export const buildEntries = (
@@ -93,16 +95,14 @@ export const buildEntries = (
         continue
       }
       const id = model.id
-      const found = findCatalogModel(matchCatalogProvider(
-        { id: provider.id, name: provider.name, baseUrl: provider.baseUrl },
-        catalog
-      ), id, catalog)
+      const vendor = resolveCustomVendor(provider, model, catalog)
+      const found = findCatalogModel(vendor ? catalog[vendor] : undefined, id, catalog)
       entries.push({
         providerId: provider.id,
         providerName: provider.name || provider.id,
         id,
         name: model.name ?? found?.model.name ?? id,
-        vendor: resolveCustomVendor(provider, id, catalog),
+        vendor,
         reasoning: model.reasoning ?? found?.model.reasoning ?? false,
       })
     }

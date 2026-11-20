@@ -1,21 +1,26 @@
 import { create } from 'zustand'
 
 /**
- * 兼容协议：
- * - anthropic-messages：Anthropic Messages API（DeepSeek 兼容接口也是这一套）
- * - openai-completions：OpenAI Chat Completions 兼容接口（大多数第三方网关）
+ * 兼容协议（与 DSH 的 pi-ai 协议标识一致）：
+ * - anthropic-messages：Anthropic Messages API
+ * - openai-completions：OpenAI Chat Completions
+ * - openai-responses：OpenAI Responses
+ * - google-generative-ai：Google Gemini Generative AI
  */
-export type ProviderProtocol = 'anthropic-messages' | 'openai-completions'
-
-/** 旧版本存下的协议名，读取时迁移 */
-type LegacyProtocol = 'anthropic' | 'openai'
+export type ProviderProtocol =
+  | 'anthropic-messages'
+  | 'openai-completions'
+  | 'openai-responses'
+  | 'google-generative-ai'
 
 /** 一个提供商下可选的模型；除 id 外的字段都是可选的展示/能力元数据 */
 export type ProviderModel = {
   /** 请求体里的 model 字段 */
   id: string
-  /** 选择器里展示的名字，缺省时用 models.dev 或 id */
+  /** 展示名；缺省时用 models.dev 或 id */
   name?: string
+  /** 用户显式选择的厂商图标 id（models.dev provider id） */
+  icon?: string
   /** 上下文窗口（token），仅用于展示与设置提示 */
   contextWindow?: number
   /** 单次最大输出（token），仅用于展示 */
@@ -59,10 +64,34 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
 const normalizeProtocol = (value: unknown): ProviderProtocol => {
-  const protocol = value as ProviderProtocol | LegacyProtocol | undefined
-  return protocol === 'openai' || protocol === 'openai-completions'
-    ? 'openai-completions'
-    : 'anthropic-messages'
+  switch (value) {
+    case 'openai':
+    case 'openai-completions':
+      return 'openai-completions'
+    case 'responses':
+    case 'openai-responses':
+      return 'openai-responses'
+    case 'gemini':
+    case 'google':
+    case 'google-generative-ai':
+      return 'google-generative-ai'
+    default:
+      return 'anthropic-messages'
+  }
+}
+
+/** 协议对应的默认展示名，新建/旧空名字时使用 */
+export const protocolDefaultName = (protocol: ProviderProtocol): string => {
+  switch (protocol) {
+    case 'openai-completions':
+      return 'OpenAI'
+    case 'openai-responses':
+      return 'OpenAI Responses'
+    case 'google-generative-ai':
+      return 'Gemini'
+    default:
+      return 'Anthropic'
+  }
 }
 
 const normalizeModel = (value: unknown): ProviderModel | null => {
@@ -78,6 +107,7 @@ const normalizeModel = (value: unknown): ProviderModel | null => {
   return {
     id: value.id.trim(),
     ...(name ? { name } : {}),
+    ...(typeof value.icon === 'string' && value.icon.trim() ? { icon: value.icon.trim() } : {}),
     ...(number(value.contextWindow) ? { contextWindow: number(value.contextWindow) } : {}),
     ...(number(value.maxTokens) ? { maxTokens: number(value.maxTokens) } : {}),
     ...(value.reasoning === true ? { reasoning: true } : {}),
@@ -119,9 +149,7 @@ const read = (): CustomProvider[] => {
         name:
           typeof item.name === 'string' && item.name.trim()
             ? item.name
-            : protocol === 'anthropic-messages'
-              ? 'Anthropic'
-              : 'OpenAI',
+            : protocolDefaultName(protocol),
         baseUrl: typeof item.baseUrl === 'string' ? item.baseUrl : '',
         protocol,
         apiKey: typeof item.apiKey === 'string' ? item.apiKey : '',
@@ -166,7 +194,7 @@ export const addProvider = (protocol: ProviderProtocol = 'openai-completions'): 
   const provider: CustomProvider = {
     id: createId(),
     // 默认给一个可读名字；用户可以在卡片头部直接改名
-    name: protocol === 'anthropic-messages' ? 'Anthropic' : 'OpenAI',
+    name: protocolDefaultName(protocol),
     baseUrl: '',
     protocol,
     apiKey: '',
@@ -226,7 +254,7 @@ export const enabledProviders = (providers: CustomProvider[]) =>
 
 /** 一张全空的提供商卡片（只留默认名字）在设置关闭时自动丢弃 */
 export const isBlankProvider = (provider: CustomProvider) => {
-  const defaultName = provider.protocol === 'anthropic-messages' ? 'Anthropic' : 'OpenAI'
+  const defaultName = protocolDefaultName(provider.protocol)
   return (
     (!provider.name.trim() || provider.name.trim() === defaultName) &&
     !provider.baseUrl.trim() &&

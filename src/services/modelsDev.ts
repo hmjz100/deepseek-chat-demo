@@ -281,6 +281,51 @@ export const modelVendor = (modelId: string, catalog?: Record<string, ModelsDevP
   lookupModel(modelId, catalog)?.provider.id ?? null
 
 /**
+ * 按模型（而不是协议/提供商）解析图标：
+ * 1. 配置的提供商本身在 models.dev 有同名模型时优先；
+ * 2. 否则在目录里找完全相同的模型 id（含 `厂商/模型` 形式）；
+ * 3. 同名模型有多家时，优先模型名/模型 id 中包含厂商名的那个。
+ */
+export const resolveModelVendor = (
+  input: {
+    modelId: string
+    modelName?: string
+    provider?: { id?: string; name?: string; baseUrl?: string }
+  },
+  catalog?: Record<string, ModelsDevProvider>
+): string | null => {
+  const providers = catalog ?? useModelsDev.getState().providers
+  const all = Object.values(providers)
+  if (all.length === 0) {
+    return null
+  }
+  const configured = matchCatalogProvider(input.provider ?? {}, providers)
+  if (configured?.models.some((model) => model.id === input.modelId)) {
+    return configured.id
+  }
+  const exact = all.filter((provider) =>
+    provider.models.some(
+      (model) => model.id === input.modelId || model.id.endsWith(`/${input.modelId}`)
+    )
+  )
+  if (exact.length > 0) {
+    const modelName = normalizeKey(`${input.modelName ?? ''} ${input.modelId}`)
+    const scored = [...exact].sort((left, right) => {
+      const score = (provider: ModelsDevProvider) =>
+        (modelName.includes(normalizeKey(provider.name)) ? 10 : 0) +
+        (input.modelId.startsWith(`${provider.id}/`) ? 5 : 0)
+      const delta = score(right) - score(left)
+      return delta !== 0 ? delta : left.models.length - right.models.length
+    })
+    return scored[0].id
+  }
+  // 没有同名模型时，允许按“模型名里包含厂商名”选一个唯一的图标。
+  const modelName = normalizeKey(`${input.modelName ?? ''} ${input.modelId}`)
+  const named = all.filter((provider) => modelName.includes(normalizeKey(provider.name)))
+  return named.length === 1 ? named[0].id : null
+}
+
+/**
  * 每个厂 logo 是否真实存在（未知 id 在 models.dev 上返回的是 1421 字节的通用占位图）。
  * 只放内存：规则随时可改，不应该把匹配结果固化到 localStorage。
  */

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { resolveChatTarget } from '../../services/providerRuntime.js'
+import { resolveChatTarget, protocolNeedsKey } from '../../services/providerRuntime.js'
 
 /** 设置弹窗的分组：通用设置 / 账号管理 / 数据管理 / 服务协议 */
 export type SettingsSection = 'general' | 'account' | 'data' | 'terms'
@@ -22,7 +22,11 @@ export const closeSettings = () => useSettingsDialog.setState({ open: false })
  */
 export const ensureApiKey = () => {
   const target = resolveChatTarget()
-  if (!target.baseUrl || (!target.custom && !target.apiKey)) {
+  if (
+    !target.baseUrl ||
+    (!target.custom && !target.apiKey) ||
+    (target.custom && protocolNeedsKey(target.protocol) && !target.apiKey)
+  ) {
     openSettings('account')
     return false
   }

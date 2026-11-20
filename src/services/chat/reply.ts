@@ -77,26 +77,32 @@ export const applyEvent = (
 ): AssistantMessage => {
   const next: AssistantMessage =
     reply.status === 'streaming' ? reply : { ...reply, status: 'streaming' }
+  const withFirstToken =
+    next.firstTokenAt === undefined && event.type === 'content_block_start'
+      ? { ...next, firstTokenAt: now }
+      : next
   switch (event.type) {
     case 'message_start':
-      return { ...next, usage: event.message.usage ?? next.usage }
+      return { ...withFirstToken, usage: event.message.usage ?? withFirstToken.usage }
     case 'content_block_start': {
       blockIndexes.delete(event.index)
       const block = toReplyBlock(event.content_block, now)
       if (!block) {
         // 客户端工具内容不保存；未完成的工具往返也不能作为续写前缀。
-        return event.content_block.type === 'tool_use' ? { ...next, prefix: false } : next
+        return event.content_block.type === 'tool_use'
+          ? { ...withFirstToken, prefix: false }
+          : withFirstToken
       }
-      blockIndexes.set(event.index, next.blocks.length)
-      return { ...next, blocks: [...next.blocks, block] }
+      blockIndexes.set(event.index, withFirstToken.blocks.length)
+      return { ...withFirstToken, blocks: [...withFirstToken.blocks, block] }
     }
     case 'content_block_delta': {
       const index = blockIndexes.get(event.index)
       if (index === undefined) {
-        return next
+        return withFirstToken
       }
       const { delta } = event
-      return updateBlock(next, index, (block) => {
+      return updateBlock(withFirstToken, index, (block) => {
         if (block.type === 'text' && delta.type === 'text_delta') {
           return { ...block, text: block.text + delta.text }
         }
@@ -115,10 +121,10 @@ export const applyEvent = (
     case 'content_block_stop': {
       const index = blockIndexes.get(event.index)
       if (index === undefined) {
-        return next
+        return withFirstToken
       }
       blockIndexes.delete(event.index)
-      return updateBlock(next, index, (block) =>
+      return updateBlock(withFirstToken, index, (block) =>
         block.type === 'thinking' && block.startedAt !== undefined && block.endedAt === undefined
           ? { ...block, endedAt: now }
           : block
@@ -126,13 +132,13 @@ export const applyEvent = (
     }
     case 'message_delta':
       return {
-        ...next,
+        ...withFirstToken,
         stopReason: event.delta.stop_reason,
         stopDetails: event.delta.stop_details,
-        usage: event.usage ?? next.usage,
+        usage: event.usage ?? withFirstToken.usage,
       }
     default:
-      return next
+      return withFirstToken
   }
 }
 
@@ -149,6 +155,7 @@ export const settleReply = (
   ...reply,
   status,
   error,
+  completedAt: now,
   // 拒答时保留已经下发的思考与正文：界面上改为附加一条拒答提示，而不是抹掉回答
   blocks: reply.blocks.map((block) =>
     block.type === 'thinking' && block.startedAt !== undefined && block.endedAt === undefined

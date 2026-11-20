@@ -12,6 +12,8 @@ export type ApiErrorKind =
   | 'interrupted'
   /** 响应不符合协议（如非 SSE 响应） */
   | 'protocol'
+  /** 缺少必要凭据（如 Gemini 必须提供 API Key） */
+  | 'auth'
 
 export class ApiError extends Error {
   readonly localMessage?: TranslationMessage

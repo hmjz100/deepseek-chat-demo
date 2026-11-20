@@ -1,5 +1,5 @@
 import type { TranslationKey } from '../i18n/index.js'
-import { API_ORIGIN, request } from './api/client.js'
+import { API_ORIGIN, ApiError, request } from './api/client.js'
 import {
   useProviders,
   type CustomProvider,
@@ -35,18 +35,32 @@ export const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, 
 /** 协议展示名（设置页下拉与请求头提示共用） */
 export const PROTOCOL_OPTIONS: { value: ProviderProtocol; labelKey: TranslationKey }[] = [
   { value: 'openai-completions', labelKey: 'providerProtocolOpenai' },
+  { value: 'openai-responses', labelKey: 'providerProtocolOpenaiResponses' },
   { value: 'anthropic-messages', labelKey: 'providerProtocolAnthropic' },
+  { value: 'google-generative-ai', labelKey: 'providerProtocolGemini' },
 ]
 
 /** 按协议给出 Base URL 的填写提示 */
 export const providerBaseUrlPlaceholderKey = (
   protocol: ProviderProtocol
-): TranslationKey =>
-  protocol === 'anthropic-messages'
-    ? 'providerBaseUrlPlaceholderAnthropic'
-    : 'providerBaseUrlPlaceholderOpenai'
+): TranslationKey => {
+  switch (protocol) {
+    case 'anthropic-messages':
+      return 'providerBaseUrlPlaceholderAnthropic'
+    case 'openai-responses':
+      return 'providerBaseUrlPlaceholderOpenaiResponses'
+    case 'google-generative-ai':
+      return 'providerBaseUrlPlaceholderGemini'
+    default:
+      return 'providerBaseUrlPlaceholderOpenai'
+  }
+}
 
-/** 模型列表地址（两个协议的 /models 约定一致） */
+/** 与 DSH 的 protocol-rules 对齐：Gemini 的 pi-ai 实现没有 Key 会直接拒绝请求 */
+export const protocolNeedsKey = (protocol: ProviderProtocol): boolean =>
+  protocol === 'google-generative-ai'
+
+/** 模型列表地址（Gemini 走 /models，其他协议也是 /models） */
 export const providerModelsEndpoint = (baseUrl: string) => `${normalizeBaseUrl(baseUrl)}/models`
 
 const customHeaders = (provider: CustomProvider): Record<string, string> => {
@@ -136,22 +150,39 @@ const readCapability = (raw: ModelListing, names: string[]): boolean | undefined
 
 /** 把模型列表条目归一成设置里的模型结构 */
 export const normalizeDiscoveredModel = (raw: ModelListing): ProviderModel | null => {
-  const id = typeof raw.id === 'string' ? raw.id.trim() : ''
-  if (!id) {
+  const rawId =
+    typeof raw.id === 'string'
+      ? raw.id.trim()
+      : typeof raw.name === 'string'
+        ? raw.name.trim().replace(/^models\//, '')
+        : ''
+  if (!rawId) {
     return null
   }
-  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : undefined
+  const name =
+    typeof raw.displayName === 'string' && raw.displayName.trim()
+      ? raw.displayName.trim()
+      : typeof raw.name === 'string' && raw.name.trim() && raw.name.trim() !== rawId
+        ? raw.name.trim()
+        : undefined
   const contextWindow =
     readPositive(raw.contextWindow) ??
     readPositive(raw.context_length) ??
     readPositive(raw.context_window) ??
     readPositive(raw.max_context_length) ??
-    readPositive(raw.max_input_tokens)
+    readPositive(raw.max_input_tokens) ??
+    readPositive(raw.inputTokenLimit)
   const maxTokens =
     readPositive(raw.maxTokens) ??
     readPositive(raw.max_tokens) ??
-    readPositive(raw.max_output_tokens)
-  const reasoning = readCapability(raw, ['reasoning', 'supports_reasoning', 'reasoning_content'])
+    readPositive(raw.max_output_tokens) ??
+    readPositive(raw.outputTokenLimit)
+  const reasoning = readCapability(raw, [
+    'reasoning',
+    'supports_reasoning',
+    'reasoning_content',
+    'thinking',
+  ])
   const supportsImages = readCapability(raw, [
     'supportsImages',
     'supports_images',
@@ -159,8 +190,8 @@ export const normalizeDiscoveredModel = (raw: ModelListing): ProviderModel | nul
     'image_input',
   ])
   return {
-    id,
-    ...(name && name !== id ? { name } : {}),
+    id: rawId,
+    ...(name && name !== rawId ? { name } : {}),
     ...(contextWindow ? { contextWindow } : {}),
     ...(maxTokens ? { maxTokens } : {}),
     ...(reasoning ? { reasoning } : {}),
@@ -213,6 +244,8 @@ const draftHeaders = (draft: ProviderDraft): Record<string, string> => {
     if (draft.protocol === 'anthropic-messages') {
       headers['x-api-key'] = draft.apiKey.trim()
       headers['anthropic-version'] ??= '2023-06-01'
+    } else if (draft.protocol === 'google-generative-ai') {
+      headers['x-goog-api-key'] = draft.apiKey.trim()
     } else {
       headers.Authorization = `Bearer ${draft.apiKey.trim()}`
     }
@@ -225,6 +258,9 @@ export const discoverProviderModels = async (
   draft: ProviderDraft,
   signal?: AbortSignal
 ): Promise<ProviderModel[]> => {
+  if (protocolNeedsKey(draft.protocol) && !draft.apiKey.trim()) {
+    throw new ApiError('auth', { key: 'providerApiKeyRequired' })
+  }
   const response = await request(providerModelsEndpoint(draft.baseUrl), {
     method: 'GET',
     headers: draftHeaders(draft),
@@ -233,8 +269,11 @@ export const discoverProviderModels = async (
   return normalizeModelList(await response.json())
 }
 
-/** 测试连接：能列出模型即视为可用；接口不提供 /models 时退化为一次空请求判断 */
+/** 测试连接：能列出模型即视为可用 */
 export const verifyProviderDraft = async (draft: ProviderDraft, signal?: AbortSignal) => {
+  if (protocolNeedsKey(draft.protocol) && !draft.apiKey.trim()) {
+    throw new ApiError('auth', { key: 'providerApiKeyRequired' })
+  }
   await request(providerModelsEndpoint(draft.baseUrl), {
     method: 'GET',
     headers: draftHeaders(draft),

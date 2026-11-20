@@ -1,6 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addProvider,
   addProviderModel,
@@ -21,14 +21,17 @@ import {
   providerBaseUrlPlaceholderKey,
   verifyProviderDraft,
 } from '../../services/providerRuntime.js'
+import { loadModelsDev, useModelsDev } from '../../services/modelsDev.js'
 import { ApiError } from '../../services/api/client.js'
 import { translate } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
 import { Checkbox } from '../base/Checkbox.js'
 import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
+import { Popover, type PopoverHandle } from '../base/Popover.js'
 import { Select } from '../base/Select.js'
-import { IconTrashOutline16 } from '../base/icons.js'
+import { VendorLogo } from '../base/VendorLogo.js'
+import { IconModelOutline14, IconTrashOutline16 } from '../base/icons.js'
 import styles from './Settings.module.css'
 
 const isHttpUrl = (value: string) => {
@@ -46,6 +49,116 @@ const describeError = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** 圆形模型图标选择器：默认自动按模型匹配，也可以手动指定厂商图标。 */
+const ModelIconPicker = ({
+  provider,
+  model,
+  index,
+}: {
+  provider: CustomProvider
+  model: ProviderModel
+  index: number
+}) => {
+  const t = useTranslate()
+  const catalog = useModelsDev((state) => state.providers)
+  const [query, setQuery] = useState('')
+  const popover = useRef<PopoverHandle>(null)
+
+  useEffect(() => {
+    void loadModelsDev()
+  }, [])
+
+  const options = useMemo(
+    () =>
+      Object.values(catalog).sort((left, right) =>
+        left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
+      ),
+    [catalog]
+  )
+  const keyword = query.trim().toLowerCase()
+  const filtered = options.filter(
+    (vendor) => !keyword || `${vendor.name} ${vendor.id}`.toLowerCase().includes(keyword)
+  )
+
+  const choose = (icon: string | undefined) => {
+    updateProviderModel(provider.id, index, { icon })
+    popover.current?.setIsOpen(false)
+  }
+
+  return (
+    <Popover
+      componentRef={popover}
+      trigger="click"
+      placement="bottom-start"
+      zIndex={1200}
+      offsetOptions={{ mainAxis: 6, crossAxis: 0 }}
+      renderTrigger={({ domRef, domProps }) => (
+        <button
+          ref={domRef as React.RefObject<HTMLButtonElement>}
+          type="button"
+          className={styles.providerModelIconButton}
+          aria-label={t('providerModelIcon')}
+          title={t('providerModelIcon')}
+          {...domProps}
+        >
+          <IconModelOutline14 />
+          {model.icon ? (
+            <VendorLogo vendor={model.icon} size={18} className={styles.providerModelIconLogo} />
+          ) : null}
+        </button>
+      )}
+      renderFloating={({ nodeRef, onMouseDown }) => (
+        <div
+          ref={nodeRef as React.RefObject<HTMLDivElement>}
+          className={styles.providerIconPanel}
+          role="dialog"
+          aria-label={t('providerModelIcon')}
+          onMouseDown={onMouseDown}
+        >
+          <input
+            className={styles.providerInput}
+            value={query}
+            placeholder={t('providerIconSearch')}
+            aria-label={t('providerIconSearch')}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button
+            type="button"
+            className={clsx(styles.providerIconOption, !model.icon && styles.providerIconSelected)}
+            onClick={() => choose(undefined)}
+          >
+            <span className={styles.providerIconAuto}>
+              <IconModelOutline14 />
+            </span>
+            {t('providerIconAuto')}
+          </button>
+          <div className={styles.providerIconList}>
+            {filtered.map((vendor) => (
+              <button
+                key={vendor.id}
+                type="button"
+                className={clsx(
+                  styles.providerIconOption,
+                  model.icon === vendor.id && styles.providerIconSelected
+                )}
+                onClick={() => choose(vendor.id)}
+              >
+                <span className={styles.providerIconAuto}>
+                  <VendorLogo vendor={vendor.id} size={18} />
+                </span>
+                <span className={styles.providerIconName}>{vendor.name}</span>
+              </button>
+            ))}
+            {filtered.length === 0 ? (
+              <div className={styles.providerIconEmpty}>{t('providerIconEmpty')}</div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    />
+  )
+}
+
 /** 一行的模型编辑器：ID、展示名、上下文窗口与能力开关 */
 const ModelRow = ({
   provider,
@@ -60,15 +173,16 @@ const ModelRow = ({
   return (
     <div className={styles.providerModelRow}>
       <div className={styles.providerModelMain}>
+        <ModelIconPicker provider={provider} model={model} index={index} />
         <input
-          className={styles.providerInput}
+          className={clsx(styles.providerInput, styles.providerModelId)}
           value={model.id}
           placeholder={t('providerModelIdPlaceholder')}
           aria-label={t('providerModelIdPlaceholder')}
           onChange={(event) => updateProviderModel(provider.id, index, { id: event.target.value })}
         />
         <input
-          className={styles.providerInput}
+          className={clsx(styles.providerInput, styles.providerModelName)}
           value={model.name ?? ''}
           placeholder={t('providerModelNamePlaceholder')}
           aria-label={t('providerModelNamePlaceholder')}
@@ -91,6 +205,7 @@ const ModelRow = ({
           }}
         />
         <IconButton
+          className={styles.providerModelRemove}
           icon={<IconTrashOutline16 />}
           tooltip={t('providerRemoveModel')}
           onClick={() => removeProviderModel(provider.id, index)}
@@ -349,27 +464,37 @@ const ProviderCard = ({ id }: { id: string }) => {
 export const ProviderSettings = () => {
   const t = useTranslate()
   const providers = useProviders((state) => state.providers)
+  const [adding, setAdding] = useState(false)
   return (
     <div className={styles.providerList}>
       {providers.map((provider) => (
         <ProviderCard key={provider.id} id={provider.id} />
       ))}
       <div className={styles.providerAddRow}>
-        <button
-          type="button"
-          className={styles.providerAdd}
-          onClick={() => addProvider('openai-completions')}
-        >
-          {t('providerAddOpenai')}
-        </button>
-        <button
-          type="button"
-          className={styles.providerAdd}
-          onClick={() => addProvider('anthropic-messages')}
-        >
-          {t('providerAddAnthropic')}
+        <button type="button" className={styles.providerAdd} onClick={() => setAdding(true)}>
+          {t('providerAdd')}
         </button>
       </div>
+      {adding ? (
+        <Modal title={t('providerAddTitle')} closable width={400} onClose={() => setAdding(false)}>
+          <p className={styles.providerAddHint}>{t('providerAddHint')}</p>
+          <div className={styles.providerProtocols}>
+            {PROTOCOL_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={styles.providerProtocolOption}
+                onClick={() => {
+                  addProvider(option.value)
+                  setAdding(false)
+                }}
+              >
+                {t(option.labelKey)}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      ) : null}
     </div>
   )
 }

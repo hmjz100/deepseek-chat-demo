@@ -36,8 +36,8 @@ pnpm build
 - 附件上传、粘贴与拖拽，语音输入和回复朗读；移动端录音时输入框首行显示实时频谱。
 - Markdown、代码高亮、KaTeX 公式和 Mermaid 图表；图表可缩放并导出 PNG / SVG / 源码，图片支持全屏查看。
 - 输入框内的模型与推理等级选择器；设置中可添加 OpenAI / Anthropic 兼容的第三方模型提供商，支持逐提供商启用、从端点拉取模型列表，并逐模型声明推理与图片能力。
-- 自定义提供商使用自己的 Base URL 与 API Key 直接对话，协议在 OpenAI Chat Completions 与 Anthropic Messages 间切换；附件仍只支持内置 DeepSeek。
-- 对话框底部显示上下文用量环（点击查看已用 / 上限），仅对话开始后出现；移动端模型选择器位于顶栏右侧。
+- 自定义提供商使用自己的 Base URL 与 API Key 直接对话，协议支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 与 Google Gemini；附件仍只支持内置 DeepSeek。
+- 对话框底部显示会话统计（轮次/步数/输出速度）、Token 用量（缓存命中）与上下文用量环，均可点击查看明细；旧会话缺少用量时按内容估算。移动端模型选择器位于顶栏右侧。
 - 可选的内容安全校验（`safety_check`）；遇到拒答时保留已下发的正文，并附上拒答提示与原因，而不是清空回答。
 - 简体中文与英文、浅色与深色主题、移动端布局、位置设置、历史导入导出。
 
@@ -45,7 +45,7 @@ pnpm build
 
 API Key 和设置保存在浏览器 localStorage，会话与原始附件保存在 IndexedDB。本地数据按浏览器配置文件与站点源隔离。发送消息、上传附件和使用语音功能会把相应内容发送到配置的 API 服务。
 
-设置 → 账号 → 模型提供商可添加第三方端点：选择 OpenAI 兼容（Chat Completions）或 Anthropic 兼容（Messages），填写 Base URL 与 API Key，并逐个维护模型。每个提供商都可以“获取模型列表”和“测试连接”；模型名、厂商图标等展示元数据仍可回落到公开的 [models.dev](https://models.dev) 目录。自定义提供商目前只支持纯文本对话，附件（Files API）仍只走内置 DeepSeek。这些 Key 保存在 localStorage，输入框会向所选提供商自己的端点发起请求。
+设置 → 账号 → 模型提供商可添加第三方端点：一个「添加提供商」入口会先选择接口协议（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Google Gemini），再填写 Base URL 与 API Key，并逐个维护模型。每个提供商都可以“获取模型列表”和“测试连接”；每个模型左侧的圆形按钮可以手动选择厂商图标，默认按模型名/id 在 models.dev 中匹配（同名模型优先取模型名里包含厂商名的那家）。模型名、厂商图标等展示元数据仍可回落到公开的 [models.dev](https://models.dev) 目录。自定义提供商目前只支持纯文本对话，附件（Files API）仍只走内置 DeepSeek。这些 Key 保存在 localStorage，输入框会向所选提供商自己的端点发起请求。
 
 设置 → 数据中的历史导入导出使用 ZIP 压缩包。确认并校验成功后，导入会替换全部本地会话与附件。导出包含会话和本地可用的原始图片，不包含 API Key、设置与原始非图片附件。归档格式与保留细节见[历史导入导出文档（中文）](src/services/chat/history/README.md)。
 
