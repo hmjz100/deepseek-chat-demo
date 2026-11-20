@@ -430,6 +430,24 @@ const ProviderCard = ({ id }: { id: string }) => {
           }
         >
           <div className={styles.providerCandidates}>
+            <label className={styles.providerCandidateAll}>
+              <Checkbox
+                checked={
+                  candidates.length > 0 &&
+                  candidates.every((model) => picked.has(model.id))
+                }
+                ariaLabel={t('providerFetchSelectAll')}
+                onChange={(checked) =>
+                  setPicked(
+                    checked ? new Set(candidates.map((model) => model.id)) : new Set()
+                  )
+                }
+              />
+              <span>{t('providerFetchSelectAll')}</span>
+              <span className={styles.providerCandidateCount}>
+                {t('providerFetchSelected', { count: picked.size, total: candidates.length })}
+              </span>
+            </label>
             {candidates.map((model) => (
               <label key={model.id} className={styles.providerCandidate}>
                 <Checkbox

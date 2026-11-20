@@ -122,6 +122,8 @@ export const en = {
   providerFetchEmpty: 'The endpoint returned no models',
   providerFetchFailed: 'Failed to fetch models: {message}',
   providerFetchConfirm: 'Add selected',
+  providerFetchSelectAll: 'Select all',
+  providerFetchSelected: '{count}/{total} selected',
   providerFetchCancel: 'Cancel',
   providerTest: 'Test connection',
   providerTesting: 'Testing...',

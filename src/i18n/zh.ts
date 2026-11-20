@@ -119,6 +119,8 @@ export const zh = {
   providerFetchEmpty: '端点没有返回模型',
   providerFetchFailed: '获取模型列表失败：{message}',
   providerFetchConfirm: '添加所选',
+  providerFetchSelectAll: '全选',
+  providerFetchSelected: '已选 {count}/{total}',
   providerFetchCancel: '取消',
   providerTest: '测试连接',
   providerTesting: '测试中…',
