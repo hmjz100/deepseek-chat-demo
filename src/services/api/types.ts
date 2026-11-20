@@ -179,6 +179,8 @@ export type CreateMessageRequest = {
   messages: MessageParam[]
   thinking: { type: 'enabled' | 'disabled'; budget_tokens?: number }
   tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
+  /** 自定义 Anthropic 兼容端点要求必填；DeepSeek 内置接口不需要 */
+  max_tokens?: number
   safety_check?: { level: 'high' }
   title?: { enabled: boolean }
 }

@@ -22,7 +22,7 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey } from '../settings/settingsDialogState.js'
+import { ensureApiKey, providerSupportsFiles } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { ModelPicker } from './ModelPicker.js'
 import { showToast } from '../base/toastState.js'
@@ -81,7 +81,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   }, [t])
 
   const acceptFiles = (files: File[]) => {
-    if (files.length === 0 || useChatStore.getState().importingHistory || !ensureApiKey()) {
+    if (files.length === 0 || useChatStore.getState().importingHistory) {
+      return
+    }
+    // 自定义提供商没有 Files API，附件无法发送；先提示，避免白上传。
+    if (!providerSupportsFiles()) {
+      showToast({ key: 'providerFilesUnsupported' })
+      return
+    }
+    if (!ensureApiKey()) {
       return
     }
     const error = addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '')
@@ -301,7 +309,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               tone="primary"
               icon={<IconPaperclipOutline16 />}
               disabled={importingHistory}
-              onClick={() => ensureApiKey() && fileInputRef.current?.click()}
+              onClick={() => {
+                if (!providerSupportsFiles()) {
+                  showToast({ key: 'providerFilesUnsupported' })
+                  return
+                }
+                if (ensureApiKey()) {
+                  fileInputRef.current?.click()
+                }
+              }}
             />
           </Tooltip>
           <input
@@ -315,8 +331,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               event.target.value = ''
             }}
           />
-          {/* 模型与思考强度：位于发送键左侧 */}
-          <ModelPicker />
+          {/* 模型与思考强度：桌面端位于发送键左侧；移动端移到顶栏右侧 */}
+          {!isMobile ? <ModelPicker /> : null}
           {streaming && sessionId ? (
             <button
               type="button"

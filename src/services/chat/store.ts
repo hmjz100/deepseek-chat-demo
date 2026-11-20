@@ -10,8 +10,8 @@ import {
   uploadAttachment,
   useUploads,
 } from '../attachments.js'
+import { providerModel, resolveChatTarget } from '../providerRuntime.js'
 import { THINKING_EFFORT_BUDGET, useSettings } from '../settings.js'
-import { useProviders } from '../providers.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
 import {
@@ -53,18 +53,10 @@ const thinkingBudget = (): { budget_tokens?: number } => {
   return budget === null ? {} : { budget_tokens: budget }
 }
 
-/**
- * 把当前的提供商选择解析成请求目标：内置 DeepSeek 走官方地址与 API Key，
- * 自定义提供商走它自己的地址和 Key（没填地址时回落到内置）。
- */
-const resolveRequestTarget = (): { apiKey: string; baseUrl?: string } => {
-  const { providerId, apiKey } = useSettings.getState()
-  const custom = useProviders.getState().providers.find((provider) => provider.id === providerId)
-  if (custom && custom.baseUrl.trim()) {
-    return { apiKey: custom.apiKey, baseUrl: custom.baseUrl.trim() }
-  }
-  return { apiKey: apiKey ?? '' }
-}
+/** 请求里是否引用了需要 Files API 的附件（历史与本轮都算） */
+const requestHasFiles = (request: Request) =>
+  request.question.files.length > 0 ||
+  request.history.some((message) => message.role === 'user' && message.files.length > 0)
 /** 服务端判定 file_id 失效后，重新补传并重发的最多次数（不含首次请求） */
 const FILE_RETRY_LIMIT = 2
 /** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
@@ -83,6 +75,9 @@ const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
 
 /** 允许自动补标题的请求；手动重命名后取消本轮标题写入，包含主动清空标题的情况。 */
 const titleRequests = new Set<AbortController>()
+
+/** 自定义提供商没有服务端标题扩展，用首条提问生成一个本地标题 */
+const fallbackTitle = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 30)
 
 type ChatState = {
   ready: boolean
@@ -1055,7 +1050,15 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       let preparing = true
       let receivedContent = false
       try {
-        const prepared = await prepareFiles(sessionId, request, controller.signal)
+        const target = resolveChatTarget()
+        // 自定义提供商目前只支持纯文本；附件是 DeepSeek Files API 的 file_id，不能跨端点复用。
+        if (!target.filesApi && requestHasFiles(request)) {
+          preparing = false
+          throw new ApiError('protocol', { key: 'providerFilesUnsupported' })
+        }
+        const prepared = target.filesApi
+          ? await prepareFiles(sessionId, request, controller.signal)
+          : request
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
@@ -1071,24 +1074,34 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           initial.thinking ?? false,
           latestReminder
         )
-        const target = resolveRequestTarget()
+        const selectedModel = providerModel(target.providerId, initial.model ?? MODEL)
+        // 推理是逐模型能力：自定义模型没有勾选「支持推理」时不发送思考参数。
+        const thinkingEnabled =
+          (initial.thinking ?? false) && (target.custom ? selectedModel.reasoning === true : true)
         const events = streamMessage(
-          target.apiKey,
+          target,
           {
             model: initial.model ?? MODEL,
             system: SYSTEM_PROMPT,
             messages,
             thinking: {
-              type: initial.thinking ? 'enabled' : 'disabled',
-              ...(initial.thinking ? thinkingBudget() : {}),
+              type: thinkingEnabled ? 'enabled' : 'disabled',
+              ...(thinkingEnabled ? thinkingBudget() : {}),
             },
-            // 设置里关掉内容安全校验时不传该参数
-            ...(useSettings.getState().safetyCheck ? { safety_check: SAFETY_CHECK } : {}),
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+            ...(target.custom && selectedModel.maxTokens
+              ? { max_tokens: selectedModel.maxTokens }
+              : {}),
+            // DeepSeek 专有扩展只发给内置接口；自定义提供商只发送标准消息体
+            tools: target.custom ? [] : serverTools(initial.search ?? false),
+            ...(target.custom
+              ? {}
+              : {
+                  // 设置里关掉内容安全校验时不传该参数
+                  ...(useSettings.getState().safetyCheck ? { safety_check: SAFETY_CHECK } : {}),
+                  ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+                }),
           },
-          controller.signal,
-          target.baseUrl
+          controller.signal
         )
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {
@@ -1113,6 +1126,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        // 自定义提供商不返回服务端标题；首轮成功后用提问文本补一个标题。
+        if (target.custom && !getSession(sessionId)?.title) {
+          const title = fallbackTitle(request.question.content)
+          if (title) {
+            updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
+          }
+        }
         break
       } catch (error) {
         if (controller.signal.aborted) {

@@ -9,12 +9,34 @@
 }
 
 .title {
-  flex: 1;
-  min-width: 0;
-  margin: 0 12px;
+  flex: 0 1 auto;
+  min-width: 72px;
+  max-width: 50%;
+  margin: 0 8px 0 12px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
+}
+
+/* 右侧模型选择器 + 新对话按钮：模型名称吃掉剩余宽度，先于对话名称省略，互不重叠 */
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.modelSlot {
+  display: flex;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.modelSlot button {
+  max-width: 100%;
 }

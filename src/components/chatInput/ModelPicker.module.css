@@ -39,30 +39,6 @@
   object-fit: contain;
 }
 
-/* 移动端：模型选择器收缩成一个小图标按钮，不显示名称，避免挤占输入区 */
-.buttonCompact {
-  width: 28px;
-  min-width: 28px;
-  padding: 0 4px 0 6px;
-  gap: 1px;
-  color: var(--dsw-alias-label-primary);
-
-  svg {
-    color: var(--dsw-alias-label-primary);
-  }
-}
-
-.compactLogo {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-}
-
-.compactFallback {
-  font-size: 13px;
-  line-height: 20px;
-}
-
 /* 浮层：背景/阴影/圆角/动画沿用 .ds-dropdown-menu，这里只补宽度和内边距 */
 .panel {
   width: 244px;

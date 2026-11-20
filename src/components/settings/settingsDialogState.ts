@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { useSettings } from '../../services/settings.js'
+import { resolveChatTarget } from '../../services/providerRuntime.js'
 
 /** 设置弹窗的分组：通用设置 / 账号管理 / 数据管理 / 服务协议 */
 export type SettingsSection = 'general' | 'account' | 'data' | 'terms'
@@ -15,11 +15,19 @@ export const openSettings = (section: SettingsSection) =>
 
 export const closeSettings = () => useSettingsDialog.setState({ open: false })
 
-/** 没有 API Key 时打开设置并选中「账号管理」，返回是否已有 Key */
+/**
+ * 当前选中的提供商是否可以发请求：内置 DeepSeek 需要全局 API Key；
+ * 自定义提供商只要求填了接口地址（Key 可以留空，交给本地网关或代理鉴权）。
+ * 条件不满足时打开「账号管理」，返回是否已就绪。
+ */
 export const ensureApiKey = () => {
-  if (useSettings.getState().apiKey) {
-    return true
+  const target = resolveChatTarget()
+  if (!target.baseUrl || (!target.custom && !target.apiKey)) {
+    openSettings('account')
+    return false
   }
-  openSettings('account')
-  return false
+  return true
 }
+
+/** 当前提供商是否支持上传附件（只有内置 DeepSeek 的 Files API） */
+export const providerSupportsFiles = () => resolveChatTarget().filesApi

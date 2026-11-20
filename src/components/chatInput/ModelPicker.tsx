@@ -52,6 +52,8 @@ export type ModelEntry = {
   name: string
   /** 该模型属于哪家厂商（models.dev 的 logo id），用于显示原厂 logo */
   vendor: string | null
+  /** 该模型是否支持推理等级（自定义提供商在设置里逐模型声明） */
+  reasoning: boolean
 }
 
 /** 按厂商在目录里找模型：先认提供商（按 baseUrl），再在它名下按 id 找 */
@@ -82,10 +84,15 @@ export const buildEntries = (
       id: model.id,
       name: found?.model.name ?? model.name,
       vendor: model.vendor,
+      reasoning: true,
     }
   })
   for (const provider of enabledProviders(providers)) {
-    for (const id of provider.models) {
+    for (const model of provider.models) {
+      if (!model.id.trim()) {
+        continue
+      }
+      const id = model.id
       const found = findCatalogModel(matchCatalogProvider(
         { id: provider.id, name: provider.name, baseUrl: provider.baseUrl },
         catalog
@@ -94,25 +101,13 @@ export const buildEntries = (
         providerId: provider.id,
         providerName: provider.name || provider.id,
         id,
-        name: found?.model.name ?? id,
+        name: model.name ?? found?.model.name ?? id,
         vendor: resolveCustomVendor(provider, id, catalog),
+        reasoning: model.reasoning ?? found?.model.reasoning ?? false,
       })
     }
   }
   return entries
-}
-
-/** 按模型 id 在全部提供商条目中解析显示名与厂商（顶栏模型名标签用，官网 _B/_F 语义） */
-export const useModelEntry = (modelId: string | null): ModelEntry | null => {
-  const providers = useProviders((state) => state.providers)
-  const catalog = useModelsDev((state) => state.providers)
-  return useMemo(() => {
-    if (modelId === null) {
-      return null
-    }
-    const entries = buildEntries(providers, catalog)
-    return entries.find((entry) => entry.id === modelId) ?? null
-  }, [providers, catalog, modelId])
 }
 
 /**
@@ -123,7 +118,7 @@ export const useModelEntry = (modelId: string | null): ModelEntry | null => {
  */
 export const ModelPicker = () => {
   const t = useTranslate()
-  // 移动端收缩成单图标按钮（官网 <768 抽屉布局同款）
+  // 移动端在顶栏使用图标 + 名称；桌面端在输入框内只显示名称
   const isMobile = useIsMobile()
   const providerId = useSettings((state) => state.providerId)
   const model = useSettings((state) => state.model)
@@ -145,6 +140,15 @@ export const ModelPicker = () => {
 
   const current = entries.find((entry) => entry.providerId === providerId && entry.id === model) ?? entries[0]
   const filtered = entries.filter((entry) => matchesModelQuery(entry, query))
+  // 推理等级是逐模型能力：模型不支持时，深度思考开关与强制等级都不展示。
+  const showEffort = thinking && current?.reasoning === true
+
+  // 选中的供应商/模型被删除、禁用，或切换到不支持当前模型时，回落到当前可用条目。
+  useEffect(() => {
+    if (current && (current.providerId !== providerId || current.id !== model)) {
+      setProvider(current.providerId, current.id)
+    }
+  }, [current, providerId, model])
 
   /** 按提供商分组 */
   const grouped = useMemo(() => {
@@ -163,25 +167,25 @@ export const ModelPicker = () => {
     max: t('thinkingEffortMax'),
   }
 
-  // 关闭深度思考后推理等级不再参与请求，回到默认档位
+  // 当前模型不支持推理时，推理等级不参与请求，回到默认档位
   useEffect(() => {
-    if (!thinking && effort !== 'standard') {
+    if (!showEffort && effort !== 'standard') {
       setThinkingEffort('standard')
     }
-  }, [thinking, effort])
+  }, [showEffort, effort])
 
   const currentLabel = current?.name ?? model
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
       if (open && !wasOpenRef.current) {
-        setPane(thinking ? 'root' : 'model')
+        setPane(showEffort ? 'root' : 'model')
         setQuery('')
         void loadModelsDev()
       }
       wasOpenRef.current = open
     },
-    [thinking]
+    [showEffort]
   )
 
   return (
@@ -194,24 +198,19 @@ export const ModelPicker = () => {
         <button
           ref={domRef as React.RefObject<HTMLButtonElement>}
           type="button"
-          className={clsx(styles.button, isMobile && styles.buttonCompact)}
+          className={styles.button}
           aria-label={t('modelSelectorLabel')}
           aria-expanded={isOpen}
           aria-haspopup="menu"
-          title={thinking ? `${currentLabel} · ${effortLabel[effort]}` : currentLabel}
+          title={showEffort ? `${currentLabel} · ${effortLabel[effort]}` : currentLabel}
           {...domProps}
         >
-          {isMobile ? (
-            // 移动端：只留一个厂商 logo 小图标，不显示名称，避免挤占输入区
-            current?.vendor ? (
-              <VendorLogo className={styles.compactLogo} vendor={current.vendor} size={16} />
-            ) : (
-              <span className={styles.compactFallback}>{t('modelSelectorLabel')}</span>
-            )
-          ) : (
-            <span className={styles.buttonText}>{currentLabel}</span>
-          )}
-          {!isMobile && thinking ? <span className={styles.effort}>{effortLabel[effort]}</span> : null}
+          {isMobile && current?.vendor ? (
+            // 顶栏：有厂商图标时显示图标；没有图标时只显示模型名称
+            <VendorLogo className={styles.logo} vendor={current.vendor} size={16} />
+          ) : null}
+          <span className={styles.buttonText}>{currentLabel}</span>
+          {!isMobile && showEffort ? <span className={styles.effort}>{effortLabel[effort]}</span> : null}
           <IconChevronDownOutline14 />
         </button>
       )}
@@ -222,7 +221,7 @@ export const ModelPicker = () => {
           className={clsx('ds-dropdown-menu', 'ds-elevated', styles.panel)}
           onMouseDown={onMouseDown}
           onKeyDown={(event) => {
-            if (event.key === 'Escape' && thinking && pane !== 'root') {
+            if (event.key === 'Escape' && showEffort && pane !== 'root') {
               event.stopPropagation()
               setPane('root')
             }
@@ -239,7 +238,7 @@ export const ModelPicker = () => {
                 <span className={styles.cellValue}>{currentLabel}</span>
                 <IconChevronRightOutline14 />
               </div>
-              {thinking ? (
+              {showEffort ? (
                 <div
                   role="menuitem"
                   className={clsx('ds-dropdown-menu-option', styles.cell)}

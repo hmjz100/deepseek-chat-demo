@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 
 /** models.dev 的目录缓存：一次抓取，24 小时内复用 */
-const CACHE_KEY = 'chat-demo:models-dev'
+/** private? 本地目录缓存版本：结构升级后换 key，强制重新拉取 */
+const CACHE_KEY = 'chat-demo:models-dev:v2'
 const CACHE_TTL = 24 * 60 * 60 * 1000
 const ENDPOINT = 'https://models.dev/api.json'
 
@@ -13,6 +14,12 @@ export type ModelsDevModel = {
   reasoning: boolean
   /** 推理等级的 id 列表；没有就是默认档位 */
   efforts: string[]
+  /** 上下文窗口（token），用于对话底部用量条 */
+  contextWindow?: number
+  /** 单次最大输出（token） */
+  maxTokens?: number
+  /** 是否支持图片输入 */
+  supportsImages?: boolean
 }
 
 export type ModelsDevProvider = {
@@ -73,11 +80,21 @@ const normalizeModel = (id: string, raw: Record<string, unknown>): ModelsDevMode
       }
     }
   }
+  const limit = raw.limit && typeof raw.limit === 'object' ? (raw.limit as Record<string, unknown>) : {}
+  const positive = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : undefined
+  const modalities =
+    raw.modalities && typeof raw.modalities === 'object'
+      ? (raw.modalities as { input?: unknown }).input
+      : undefined
   return {
     id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : id,
     reasoning,
     efforts,
+    ...(positive(limit.context) ? { contextWindow: positive(limit.context) } : {}),
+    ...(positive(limit.output) ? { maxTokens: positive(limit.output) } : {}),
+    ...(Array.isArray(modalities) && modalities.includes('image') ? { supportsImages: true } : {}),
   }
 }
 

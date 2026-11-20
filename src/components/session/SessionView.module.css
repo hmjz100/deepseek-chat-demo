@@ -57,35 +57,11 @@
   border-color: var(--dsw-alias-brand-primary);
 }
 
-/* 官网 _U（45107）：模型名标签 —— 容器上移 5px、图标品牌色 mr4、名 xxxs-strong-11 */
-.modelTag {
-  display: flex;
-  position: relative;
-  top: -5px;
-  width: fit-content;
-  align-items: center;
-  margin-bottom: -5px;
-  user-select: none;
-}
-
-.modelTagIcon {
-  display: flex;
-  flex-shrink: 0;
-  margin-right: 4px;
-  color: var(--dsw-alias-brand-text);
-}
-
-.modelTagName {
-  overflow: hidden;
-  font: var(--dsw-font-xxxs-strong-11);
-  line-height: 16px;
-  color: var(--dsw-alias-label-secondary);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
+/* 官网 _U（45107）的模型名标签已按需求移除 */
 
 .withCollapsedSider {
-  margin-left: 113px;
+  /* 收起侧栏后固定条占据左侧 16 + 157px，标题从它右侧开始，避免被盖住 */
+  margin-left: 165px;
 }
 
 .inputContainer {
