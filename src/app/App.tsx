@@ -1,8 +1,8 @@
 import clsx from 'clsx'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
-import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
+import { useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
   initChat,
@@ -60,10 +60,17 @@ const parseHashRoute = (hash: string): AppRoute => {
 
 export const App = () => {
   const t = useTranslate()
-  const isMobile = useIsMobile()
+  const [width, setWidth] = useState(window.innerWidth)
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  // 布局断点与官网对齐：<768px 为移动端抽屉；768~1024px 固定侧栏但强制收起（显示左上角胶囊）；≥1024px 按用户设置展开/收起。
+  const isMobile = width < 768
+  const savedCollapsed = useSettings((state) => state.siderCollapsed)
+  const siderCollapsed = width < 1024 || savedCollapsed
   const locale = useSettings((state) => state.locale)
-  // 移动端侧边栏以独立抽屉管理开合状态
-  const siderCollapsed = useSettings((state) => state.siderCollapsed) && !isMobile
   const ready = useChatStore((state) => state.ready)
   const initError = useChatStore((state) => state.initError)
   const saveError = useChatStore((state) => Object.values(state.sessionSaveErrors).some(Boolean))
@@ -194,7 +201,7 @@ export const App = () => {
             </div>
           ) : null}
           <div className={styles.content}>
-            {siderCollapsed ? <CollapsedSider /> : null}
+            {!isMobile && siderCollapsed ? <CollapsedSider /> : null}
             {!ready || (activeId !== null && !session) ? (
               <div className={styles.loadingView}>
                 {isMobile ? <MobileHeader /> : null}
