@@ -63,6 +63,11 @@ const FILE_RETRY_BASE_DELAY = 1000
 
 /** 允许自动补标题的请求；手动重命名后取消本轮标题写入，包含主动清空标题的情况。 */
 const titleRequests = new Set<AbortController>()
+/**
+ * 用户主动停止的流：fetch 中止后底层流可能正常结束、也可能再抛一个 AbortError，
+ * 两种 finishes 都必须记为 stopped，不能把停止误报成「生成失败」。
+ */
+const stoppedStreams = new WeakSet<AbortController>()
 
 /** 自定义提供商没有服务端标题扩展，用首条提问生成一个本地标题 */
 const fallbackTitle = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 30)
@@ -579,7 +584,28 @@ const removeSessionData = async (id: string): Promise<boolean> => {
   }
 }
 
-export const stopReply = (sessionId: string) => getStreamController(sessionId)?.abort()
+/**
+ * 主动停止：先同步把最后一条回复记为 stopped 并落盘，再中止请求。
+ * 这样即使底层 fetch 在中止后仍抛错，界面也不会先闪出一条「生成失败」。
+ */
+export const stopReply = (sessionId: string) => {
+  const controller = getStreamController(sessionId)
+  if (!controller) {
+    return
+  }
+  stoppedStreams.add(controller)
+  const last = getSession(sessionId)?.messages.at(-1)
+  if (
+    last?.role === 'assistant' &&
+    last.status !== 'stopped' &&
+    last.status !== 'done' &&
+    last.status !== 'error'
+  ) {
+    updateReply(sessionId, settleReply(last, 'stopped', Date.now()))
+    persist(sessionId)
+  }
+  controller.abort()
+}
 
 /**
  * 提交指定会话的最新草稿；null 表示新建会话。
@@ -1123,7 +1149,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         }
         break
       } catch (error) {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || stoppedStreams.has(controller)) {
           reply = settleReply(reply, 'stopped', Date.now())
           break
         }
@@ -1172,6 +1198,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)
     cancelAnimationFrame(frame)
+    // fetch 被中止后底层流可能仍以正常结束收尾；以「用户主动停止」为准，避免报错提示。
+    if (stoppedStreams.has(controller)) {
+      reply = settleReply(reply, 'stopped', Date.now())
+    }
     updateReply(sessionId, reply)
     set((state) => ({
       streaming: Object.fromEntries(

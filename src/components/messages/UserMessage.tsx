@@ -12,6 +12,7 @@ import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { UserMessage as UserMessageType } from '../../services/chat/types.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
+import { Tooltip } from '../base/Tooltip.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
 import {
   BranchSwitcher,
@@ -142,31 +143,39 @@ export const UserMessage = memo(function UserMessage({
           {message.content ? (
             <div
               ref={bubbleRef}
-              className={styles.bubble}
+              className={clsx(styles.bubble, clamped && styles.bubbleClamped)}
               style={
-                clamped
+                clamped && !expanded
                   ? {
-                      maxHeight: expanded ? undefined : COLLAPSED_HEIGHT,
-                      overflow: 'hidden',
+                      maxHeight: COLLAPSED_HEIGHT,
                       transition: 'max-height var(--ds-transition-duration) var(--ds-ease-in-out)',
                     }
                   : undefined
               }
             >
               {message.content}
+              {/* 官网把展开/收起开关放在泡泡内右下角（小胶囊 + 渐隐遮罩），不在泡泡下方 */}
+              {clamped ? (
+                <>
+                  <span className={styles.collapseFade} aria-hidden />
+                  <Tooltip
+                    content={t(expanded ? 'collapseUserMessage' : 'expandUserMessage')}
+                    placement="bottom"
+                  >
+                    <button
+                      type="button"
+                      className={clsx(styles.collapseButton, expanded && styles.collapseButtonOpen)}
+                      aria-label={t(expanded ? 'collapseUserMessage' : 'expandUserMessage')}
+                      onClick={() => setExpanded((value) => !value)}
+                    >
+                      <IconChevronDownOutline14 />
+                    </button>
+                  </Tooltip>
+                </>
+              ) : null}
             </div>
           ) : null}
           <div className={styles.bottom}>
-            {clamped ? (
-              <button
-                type="button"
-                className={clsx(styles.collapseButton, expanded && styles.collapseButtonOpen)}
-                onClick={() => setExpanded((value) => !value)}
-              >
-                <IconChevronDownOutline14 />
-                {t(expanded ? 'collapseUserMessage' : 'expandUserMessage')}
-              </button>
-            ) : null}
             <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
               {message.content ? <CopyButton text={message.content} /> : null}
               <IconButton

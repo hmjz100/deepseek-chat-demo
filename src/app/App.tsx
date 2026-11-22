@@ -17,8 +17,9 @@ import { SessionView } from '../components/session/SessionView.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import {
-  ensureApiKey,
+  ensureUsableProvider,
   openSettings,
+  promptAccountSetupOnStartup,
   useSettingsDialog,
   type SettingsSection,
 } from '../components/settings/settingsDialogState.js'
@@ -117,8 +118,9 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
-    // 首次打开先在设置里输入 API Key
-    ensureApiKey()
+    // 首次使用（既无 Key 也无供应商）才引导账号管理；已有供应商则直接切到可用模型
+    ensureUsableProvider()
+    promptAccountSetupOnStartup()
   }, [])
 
   // 深链：#/chat/{uuid} 打开会话、#/settings/{general|data} 打开设置子页；

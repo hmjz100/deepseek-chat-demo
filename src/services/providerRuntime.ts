@@ -189,6 +189,25 @@ export const normalizeDiscoveredModel = (raw: ModelListing): ProviderModel | nul
     'vision',
     'image_input',
   ])
+  const supportsTools = readCapability(raw, ['tool_call', 'supports_tools', 'tools', 'function_call'])
+  const efforts: string[] = []
+  const options = raw.reasoning_options ?? raw.reasoning_efforts
+  if (Array.isArray(options)) {
+    for (const option of options) {
+      if (typeof option === 'string') {
+        efforts.push(option)
+      } else if (option && typeof option === 'object') {
+        const record = option as Record<string, unknown>
+        if (record.type === 'effort' && Array.isArray(record.values)) {
+          for (const value of record.values) {
+            if (typeof value === 'string') {
+              efforts.push(value)
+            }
+          }
+        }
+      }
+    }
+  }
   return {
     id: rawId,
     ...(name && name !== rawId ? { name } : {}),
@@ -196,6 +215,8 @@ export const normalizeDiscoveredModel = (raw: ModelListing): ProviderModel | nul
     ...(maxTokens ? { maxTokens } : {}),
     ...(reasoning ? { reasoning } : {}),
     ...(supportsImages ? { supportsImages } : {}),
+    ...(supportsTools ? { supportsTools } : {}),
+    ...(efforts.length ? { efforts: [...new Set(efforts)] } : {}),
   }
 }
 

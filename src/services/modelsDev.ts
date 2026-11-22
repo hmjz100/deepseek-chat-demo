@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 /** models.dev 的目录缓存：一次抓取，24 小时内复用 */
 /** private? 本地目录缓存版本：结构升级后换 key，强制重新拉取 */
-const CACHE_KEY = 'chat-demo:models-dev:v2'
+const CACHE_KEY = 'chat-demo:models-dev:v3'
 const CACHE_TTL = 24 * 60 * 60 * 1000
 const ENDPOINT = 'https://models.dev/api.json'
 
@@ -20,7 +20,55 @@ export type ModelsDevModel = {
   maxTokens?: number
   /** 是否支持图片输入 */
   supportsImages?: boolean
+  /** 是否支持工具调用（models.dev 的 tool_call） */
+  supportsTools?: boolean
 }
+
+/**
+ * models.dev 的 logo 权威清单来自开源仓库 https://github.com/sst/models.dev
+ * 的 `providers/{id}/logo.svg`（git tree, dev 分支）。不靠抓页面猜：仓库里
+ * 有 logo.svg 的才是有专属图标的厂商，其余 CDN 返回的是通用占位图。
+ */
+const LOGO_IDS = `302ai abacus abliteratedllm abliteration-ai above adaption adzuki agentrouter agnes ai-router ai21 aiand aigrow aihubmix aimlapi ainetcafe aipg aistupidlevel aixy aki-io alibaba alibaba-cn alibaba-coding-plan alibaba-coding-plan-cn alibaba-token-plan amazon-bedrock ambient amd anonrouter anthropic anyapi apiko arcee atomic-chat augure auriko autarcho azure azure-cognitive-services bailing baseten bee berget blueclaw bothub boundless bumo butler byteplus cedarllm cerebras cheapaimodel cheapest-token cheapllm clarifai claudinio cloudcode cloudferro-sherlock cloudflare-ai-gateway cloudflare-workers-ai cohere commandcode confidential-ai coralbricks crossmodel crusoe daoxe databricks decisionmodels deepinfra deepseek digitalocean dinference dothoosh doubleword drun ebcloud echo edenai elevenlabs empiriolabs engy entrim evroc ezkielyna fastrouter fiftyx fireworks-ai fluence fortytwo freemodel frequency friendli frogbot gisoo github-copilot gitlab google google-vertex google-vertex-anthropic graphn greenpt groq helicone hetzner hopper hostinger-router hpc-ai huawei-maas hubris huggingface humain hyper impossibl inception inceptron inco infer inferall inference inference-coop inferenceapis inferris infersia inferx infomaniak io-net isoquant iteracompute jad-ai jalapeno jiekou joingonka jzstoken keln kenari kilo kimi-code-plan-cn kimi-code-plan-global kitani klavo klingai klokintegration korouter kosmik kuae-cloud-coding-plan kunavo liquid lithosai llmgateway llmgateway-providers llmtech llmtr lmstudio logits longcat lowrouter lucidquery lyceum lynkr mallard meganova melious meragpt merge-gateway meta minimax minimax-cn minimax-cn-coding-plan minimax-coding-plan mistral mixlayer moark modal model-oracle-ai modelis modelscope modular moneo moonshotai moonshotai-cn munito munito-eu nan nano-gpt nearai nebius neon neosmith neuralwatt nodecode nokeep nova novita-ai nvidia oathbreaker obscurify oci ofox ollama-cloud openai openai-codex opencode opencode-go openreason openrouter opper orcarouter outerlabs ovhcloud paraloncloud pareto pendra perplexity perplexity-agent phala phase pioneer poe poolside powerspring prime privatemode-ai proxystacks qihang-ai qiniu-ai qvac rayline reflection refuseless regolo-ai routing-run ruapi runcrate runinfra sagg salad-cloud sambanova sandbase scaleway scnet-token-plan scx-ai sensenova siliconflow siliconflow-cn snowflake-cortex sokkan sparrowcodes stackit standardcompute steadyrouter stepfun stepfun-ai stepfun-ai-step-plan stepfun-step-plan stepping-stone subconscious submodel superbot-gg synthorai teamorouter teapot-router tencent-coding-plan tencent-token-plan tencent-tokenhub tensorx tenstorrent the-grid-ai therouter thinkingmachines tinfoil toapis togetherai tokengo tokenify tokenlab tokenrouter tokenwatt trustedrouter trustedtokens turion typesafe umans-ai umans-ai-coding-plan unbiased uncensuredai unorouter unrestricted uplinkswitch vancine venice verda vispark vivgrid volcengine volcengine-coding-plan vultr wafer.ai wallaby wally wandb watsonx watt xai xiaomi xiaomi-token-plan-ams xiaomi-token-plan-cn xiaomi-token-plan-sgp xpersona xxapi zai zai-coding-plan zeldoc zenifra zenmux zerogpu zhipuai zhipuai-coding-plan zro`.split(' ')
+
+export const MODELS_DEV_LOGO_VENDORS = new Set(LOGO_IDS)
+
+/** 同一个 logo 会被多个 provider id 复用（区域版 / 套餐版），只保留一个代表，避免选择器里重复 */
+const LOGO_ALIASES: Record<string, string> = {
+  'alibaba-coding-plan': 'alibaba',
+  'alibaba-coding-plan-cn': 'alibaba',
+  'alibaba-token-plan': 'alibaba',
+  'azure-cognitive-services': 'azure',
+  'cloudflare-workers-ai': 'cloudflare-ai-gateway',
+  'google-vertex-anthropic': 'google-vertex',
+  'kuae-cloud-coding-plan': 'zhipuai-coding-plan',
+  'minimax-cn': 'minimax',
+  'minimax-cn-coding-plan': 'minimax',
+  'minimax-coding-plan': 'minimax',
+  'moonshotai-cn': 'moonshotai',
+  'munito-eu': 'munito',
+  'opencode-go': 'opencode',
+  'perplexity-agent': 'perplexity',
+  'siliconflow-cn': 'siliconflow',
+  'stepfun-ai': 'stepfun',
+  'stepfun-ai-step-plan': 'stepfun',
+  'stepfun-step-plan': 'stepfun',
+  'tencent-token-plan': 'tencent-tokenhub',
+  'umans-ai-coding-plan': 'umans-ai',
+  'volcengine-coding-plan': 'volcengine',
+  'xiaomi-token-plan-ams': 'xiaomi',
+  'xiaomi-token-plan-cn': 'xiaomi',
+  'xiaomi-token-plan-sgp': 'xiaomi',
+  'zai-coding-plan': 'zai',
+  zhipuai: 'zai',
+}
+
+/** 把复用同一 logo 的区域版/套餐版 id 收敛到代表 id */
+export const canonicalLogoVendor = (vendor: string | null | undefined): string | null =>
+  !vendor ? null : (LOGO_ALIASES[vendor] ?? (MODELS_DEV_LOGO_VENDORS.has(vendor) ? vendor : null))
+
+export const hasModelLogo = (vendor: string | null | undefined): boolean =>
+  !!vendor && MODELS_DEV_LOGO_VENDORS.has(vendor)
 
 export type ModelsDevProvider = {
   id: string
@@ -66,20 +114,41 @@ const writeCache = (catalog: Catalog) => {
   }
 }
 
-/** models.dev 原始结构里 reasoning 可能是布尔或对象，等级字段名也不统一 */
-const normalizeModel = (id: string, raw: Record<string, unknown>): ModelsDevModel => {
-  const reasoning = Boolean(raw.reasoning)
-  const effortsRaw = (raw.reasoning_efforts ?? raw.reasoningEfforts ?? []) as unknown
-  const efforts: string[] = []
-  if (Array.isArray(effortsRaw)) {
-    for (const item of effortsRaw) {
-      if (typeof item === 'string') {
-        efforts.push(item)
-      } else if (item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string') {
-        efforts.push((item as { id: string }).id)
+/** models.dev 用 reasoning_options: [{type:'effort', values:['low','high',...]}] 描述可用强度 */
+const readEfforts = (raw: Record<string, unknown>): string[] => {
+  const values: string[] = []
+  const options = raw.reasoning_options ?? raw.reasoningEfforts ?? raw.reasoning_efforts
+  const push = (item: unknown) => {
+    if (typeof item === 'string' && item.trim()) {
+      values.push(item.trim())
+    } else if (item && typeof item === 'object') {
+      const nested = (item as { values?: unknown; id?: unknown }).values
+      if (Array.isArray(nested)) {
+        nested.forEach(push)
+      } else if (typeof (item as { id?: unknown }).id === 'string') {
+        values.push((item as { id: string }).id)
       }
     }
   }
+  if (Array.isArray(options)) {
+    options.forEach((option) => {
+      // 只取 effort 类型的取值；toggle 表示可以开关思考，没有强度值
+      if (option && typeof option === 'object') {
+        const type = (option as { type?: unknown }).type
+        if (typeof type === 'string' && type !== 'effort') {
+          return
+        }
+      }
+      push(option)
+    })
+  }
+  return [...new Set(values)]
+}
+
+/** models.dev 原始结构里 reasoning 可能是布尔或对象，等级字段名也不统一 */
+const normalizeModel = (id: string, raw: Record<string, unknown>): ModelsDevModel => {
+  const reasoning = Boolean(raw.reasoning)
+  const efforts = readEfforts(raw)
   const limit = raw.limit && typeof raw.limit === 'object' ? (raw.limit as Record<string, unknown>) : {}
   const positive = (value: unknown) =>
     typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : undefined
@@ -87,6 +156,11 @@ const normalizeModel = (id: string, raw: Record<string, unknown>): ModelsDevMode
     raw.modalities && typeof raw.modalities === 'object'
       ? (raw.modalities as { input?: unknown }).input
       : undefined
+  const inputs = Array.isArray(modalities)
+    ? modalities
+    : typeof modalities === 'string'
+      ? modalities.split(/\s+/)
+      : []
   return {
     id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : id,
@@ -94,7 +168,8 @@ const normalizeModel = (id: string, raw: Record<string, unknown>): ModelsDevMode
     efforts,
     ...(positive(limit.context) ? { contextWindow: positive(limit.context) } : {}),
     ...(positive(limit.output) ? { maxTokens: positive(limit.output) } : {}),
-    ...(Array.isArray(modalities) && modalities.includes('image') ? { supportsImages: true } : {}),
+    ...(inputs.includes('image') ? { supportsImages: true } : {}),
+    ...(raw.tool_call === true ? { supportsTools: true } : {}),
   }
 }
 
@@ -295,13 +370,16 @@ export const resolveModelVendor = (
   catalog?: Record<string, ModelsDevProvider>
 ): string | null => {
   const providers = catalog ?? useModelsDev.getState().providers
-  const all = Object.values(providers)
+  const configured = matchCatalogProvider(input.provider ?? {}, providers)
+  if (configured && hasModelLogo(configured.id) && configured.models.some((model) => model.id === input.modelId)) {
+    return canonicalLogoVendor(configured.id)
+  }
+  // 没有专属 logo 的厂商一律跳过；复用同一 logo 的只保留代表，避免重复图标
+  const all = Object.values(providers).filter(
+    (provider) => hasModelLogo(provider.id) && canonicalLogoVendor(provider.id) === provider.id
+  )
   if (all.length === 0) {
     return null
-  }
-  const configured = matchCatalogProvider(input.provider ?? {}, providers)
-  if (configured?.models.some((model) => model.id === input.modelId)) {
-    return configured.id
   }
   const exact = all.filter((provider) =>
     provider.models.some(

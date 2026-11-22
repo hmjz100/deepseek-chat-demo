@@ -22,7 +22,9 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey, providerSupportsFiles } from '../settings/settingsDialogState.js'
+import { ensureApiKey, providerSupportsFiles, hasOfficialFeatures, canUploadFiles } from '../settings/settingsDialogState.js'
+import { useProviders } from '../../services/providers.js'
+import { useCurrentModelEntry } from '../../services/modelCatalog.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { ModelPicker } from './ModelPicker.js'
 import { showToast } from '../base/toastState.js'
@@ -59,6 +61,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
   const search = useSettings((state) => state.search)
+  // 订阅凭据与供应商变化，保证隐藏/恢复的入口能即时刷新
+  useSettings((state) => state.apiKey)
+  useSettings((state) => state.providerId)
+  useProviders((state) => state.providers)
+  const currentModel = useCurrentModelEntry()
+  const showOfficialFeatures = hasOfficialFeatures()
+  const showUpload = canUploadFiles()
+  // 深度思考是模型能力：非思考模型不展示开关
+  const showThinking = currentModel?.reasoning === true
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
@@ -81,7 +92,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   }, [t])
 
   const acceptFiles = (files: File[]) => {
-    if (files.length === 0 || useChatStore.getState().importingHistory) {
+    if (files.length === 0 || useChatStore.getState().importingHistory || !showUpload) {
       return
     }
     // 自定义提供商没有 Files API，附件无法发送；先提示，避免白上传。
@@ -247,34 +258,38 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方；图标为 Lottie 动画，切换时形变 */}
         <div ref={togglesRef} className={styles.toggles}>
-          <Tooltip content={t('deactivatedThinkTooltip')}>
-            <button
-              type="button"
-              className={clsx(styles.toggle, thinking && styles.selected)}
-              aria-label={t('thinkingSwitch')}
-              aria-pressed={thinking}
-              onClick={() => setThinking(!thinking)}
-            >
-              <span className={styles.toggleIcon}>
-                <ThinkToggleIcon enabled={thinking} />
-              </span>
-              <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
-            </button>
-          </Tooltip>
-          <Tooltip content={t('deactivatedSearchTooltip')}>
-            <button
-              type="button"
-              className={clsx(styles.toggle, search && styles.selected)}
-              aria-label={t('search')}
-              aria-pressed={search}
-              onClick={() => setSearch(!search)}
-            >
-              <span className={styles.toggleIcon}>
-                <GlobeToggleIcon enabled={search} />
-              </span>
-              <span className={styles.toggleLabel}>{t('search')}</span>
-            </button>
-          </Tooltip>
+          {showThinking ? (
+            <Tooltip content={t('deactivatedThinkTooltip')}>
+              <button
+                type="button"
+                className={clsx(styles.toggle, thinking && styles.selected)}
+                aria-label={t('thinkingSwitch')}
+                aria-pressed={thinking}
+                onClick={() => setThinking(!thinking)}
+              >
+                <span className={styles.toggleIcon}>
+                  <ThinkToggleIcon enabled={thinking} />
+                </span>
+                <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
+              </button>
+            </Tooltip>
+          ) : null}
+          {showOfficialFeatures ? (
+            <Tooltip content={t('deactivatedSearchTooltip')}>
+              <button
+                type="button"
+                className={clsx(styles.toggle, search && styles.selected)}
+                aria-label={t('search')}
+                aria-pressed={search}
+                onClick={() => setSearch(!search)}
+              >
+                <span className={styles.toggleIcon}>
+                  <GlobeToggleIcon enabled={search} />
+                </span>
+                <span className={styles.toggleLabel}>{t('search')}</span>
+              </button>
+            </Tooltip>
+          ) : null}
         </div>
         {/* 官网超长百分比徽标（yW.X）：首次提交/粘贴超长触发 toast 后出现 */}
         {overLimitShown && overLimitPct !== null ? (
@@ -283,43 +298,47 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           </span>
         ) : null}
         <div className={styles.right}>
-          {/* 语音输入来自官方开源 chat-demo 仓库（官网线上版没有），属于官方功能，保留 */}
-          <VoiceButton
-            status={voice.status}
-            disabled={!voice.available}
-            seconds={voice.seconds}
-            onClick={() => {
-              if (
-                voice.status !== 'idle' ||
-                (!useChatStore.getState().importingHistory && ensureApiKey())
-              ) {
-                void voice.toggle()
-              }
-            }}
-          />
-          {/* 官网 27872：上传按钮 tooltip 显示模型上传限制（最多 N 个，每个 M MB） */}
-          <Tooltip
-            content={t('uploadFileButtonTooltipDesc', {
-              count: MAX_COUNT,
-              size: MAX_SIZE_MB,
-            })}
-          >
-            <IconButton
-              size="m"
-              tone="primary"
-              icon={<IconPaperclipOutline16 />}
-              disabled={importingHistory}
+          {/* 语音输入依赖官方转写接口；没有官方 Key 时隐藏 */}
+          {showOfficialFeatures ? (
+            <VoiceButton
+              status={voice.status}
+              disabled={!voice.available}
+              seconds={voice.seconds}
               onClick={() => {
-                if (!providerSupportsFiles()) {
-                  showToast({ key: 'providerFilesUnsupported' })
-                  return
-                }
-                if (ensureApiKey()) {
-                  fileInputRef.current?.click()
+                if (
+                  voice.status !== 'idle' ||
+                  (!useChatStore.getState().importingHistory && ensureApiKey())
+                ) {
+                  void voice.toggle()
                 }
               }}
             />
-          </Tooltip>
+          ) : null}
+          {/* 官网 27872：上传按钮 tooltip 显示模型上传限制（最多 N 个，每个 M MB） */}
+          {showUpload ? (
+            <Tooltip
+              content={t('uploadFileButtonTooltipDesc', {
+                count: MAX_COUNT,
+                size: MAX_SIZE_MB,
+              })}
+            >
+              <IconButton
+                size="m"
+                tone="primary"
+                icon={<IconPaperclipOutline16 />}
+                disabled={importingHistory}
+                onClick={() => {
+                  if (!providerSupportsFiles()) {
+                    showToast({ key: 'providerFilesUnsupported' })
+                    return
+                  }
+                  if (ensureApiKey()) {
+                    fileInputRef.current?.click()
+                  }
+                }}
+              />
+            </Tooltip>
+          ) : null}
           <input
             ref={fileInputRef}
             type="file"

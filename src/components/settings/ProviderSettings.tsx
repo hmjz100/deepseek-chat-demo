@@ -21,7 +21,7 @@ import {
   providerBaseUrlPlaceholderKey,
   verifyProviderDraft,
 } from '../../services/providerRuntime.js'
-import { loadModelsDev, useModelsDev } from '../../services/modelsDev.js'
+import { canonicalLogoVendor, hasModelLogo, loadModelsDev, useModelsDev } from '../../services/modelsDev.js'
 import { ApiError } from '../../services/api/client.js'
 import { translate } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
@@ -49,7 +49,7 @@ const describeError = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 圆形模型图标选择器：默认自动按模型匹配，也可以手动指定厂商图标。 */
+/** 圆形模型图标选择器：只列 models.dev 里真正有专属 logo 的厂商 */
 const ModelIconPicker = ({
   provider,
   model,
@@ -70,9 +70,11 @@ const ModelIconPicker = ({
 
   const options = useMemo(
     () =>
-      Object.values(catalog).sort((left, right) =>
-        left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
-      ),
+      Object.values(catalog)
+        .filter((vendor) => hasModelLogo(vendor.id) && canonicalLogoVendor(vendor.id) === vendor.id)
+        .sort((left, right) =>
+          left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
+        ),
     [catalog]
   )
   const keyword = query.trim().toLowerCase()
@@ -81,7 +83,8 @@ const ModelIconPicker = ({
   )
 
   const choose = (icon: string | undefined) => {
-    updateProviderModel(provider.id, index, { icon })
+    // 复用同一 logo 的区域版/套餐版统一存代表 id，避免面板里出现重复图标
+    updateProviderModel(provider.id, index, { icon: icon ? canonicalLogoVendor(icon) ?? undefined : undefined })
     popover.current?.setIsOpen(false)
   }
 
@@ -102,7 +105,7 @@ const ModelIconPicker = ({
           {...domProps}
         >
           <IconModelOutline14 />
-          {model.icon ? (
+          {model.icon && hasModelLogo(model.icon) ? (
             <VendorLogo vendor={model.icon} size={18} className={styles.providerModelIconLogo} />
           ) : null}
         </button>
@@ -139,7 +142,7 @@ const ModelIconPicker = ({
                 type="button"
                 className={clsx(
                   styles.providerIconOption,
-                  model.icon === vendor.id && styles.providerIconSelected
+                  model.icon && canonicalLogoVendor(model.icon) === vendor.id && styles.providerIconSelected
                 )}
                 onClick={() => choose(vendor.id)}
               >
@@ -220,73 +223,73 @@ const ModelRow = ({
           />
           <span>{t('providerModelReasoning')}</span>
         </label>
+        <label className={styles.providerCapability}>
+          <Checkbox
+            checked={model.supportsImages === true}
+            ariaLabel={t('providerModelImages')}
+            onChange={(supportsImages) => updateProviderModel(provider.id, index, { supportsImages })}
+          />
+          <span>{t('providerModelImages')}</span>
+        </label>
+        <label className={styles.providerCapability}>
+          <Checkbox
+            checked={model.supportsTools === true}
+            ariaLabel={t('providerModelTools')}
+            onChange={(supportsTools) => updateProviderModel(provider.id, index, { supportsTools })}
+          />
+          <span>{t('providerModelTools')}</span>
+        </label>
       </div>
     </div>
   )
 }
 
-/** 单张提供商卡片 */
-const ProviderCard = ({ id }: { id: string }) => {
+/** 从端点拉取模型列表并勾选，结果在独立弹窗里展示 */
+const ModelCandidates = ({
+  provider,
+  onClose,
+}: {
+  provider: CustomProvider
+  onClose: () => void
+}) => {
   const t = useTranslate()
-  const provider = useProviders((state) => state.providers.find((item) => item.id === id))
+  const providerRef = useRef(provider)
+  providerRef.current = provider
   const [fetching, setFetching] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [result, setResult] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<ProviderModel[] | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  if (!provider) {
-    return null
-  }
-
-  const baseUrl = normalizeBaseUrl(provider.baseUrl)
-  const baseUrlInvalid = provider.baseUrl.trim() !== '' && !isHttpUrl(baseUrl)
 
   const fetchModels = async () => {
-    if (!baseUrl || baseUrlInvalid) {
-      setResult({ ok: false, text: t(baseUrlInvalid ? 'providerBaseUrlInvalid' : 'providerTestNeedsBaseUrl') })
+    const current = providerRef.current
+    const baseUrl = normalizeBaseUrl(current.baseUrl)
+    if (!baseUrl) {
+      setResult(t('providerTestNeedsBaseUrl'))
+      return
+    }
+    if (!isHttpUrl(baseUrl)) {
+      setResult(t('providerBaseUrlInvalid'))
       return
     }
     setFetching(true)
     setResult(null)
     try {
       const models = await discoverProviderModels({
-        protocol: provider.protocol,
+        protocol: current.protocol,
         baseUrl,
-        apiKey: provider.apiKey,
-        headers: provider.headers,
+        apiKey: current.apiKey,
+        headers: current.headers,
       })
       if (models.length === 0) {
-        setResult({ ok: false, text: t('providerFetchEmpty') })
+        setResult(t('providerFetchEmpty'))
         return
       }
       setCandidates(models)
-      setPicked(new Set(provider.models.map((model) => model.id)))
+      setPicked(new Set(current.models.map((model) => model.id)))
     } catch (error) {
-      setResult({ ok: false, text: t('providerFetchFailed', { message: describeError(error) }) })
+      setResult(t('providerFetchFailed', { message: describeError(error) }))
     } finally {
       setFetching(false)
-    }
-  }
-
-  const testConnection = async () => {
-    if (!baseUrl || baseUrlInvalid) {
-      setResult({ ok: false, text: t(baseUrlInvalid ? 'providerBaseUrlInvalid' : 'providerTestNeedsBaseUrl') })
-      return
-    }
-    setTesting(true)
-    setResult(null)
-    try {
-      await verifyProviderDraft({
-        protocol: provider.protocol,
-        baseUrl,
-        apiKey: provider.apiKey,
-        headers: provider.headers,
-      })
-      setResult({ ok: true, text: t('providerTestOk') })
-    } catch (error) {
-      setResult({ ok: false, text: t('providerTestFailed', { message: describeError(error) }) })
-    } finally {
-      setTesting(false)
     }
   }
 
@@ -294,19 +297,206 @@ const ProviderCard = ({ id }: { id: string }) => {
     if (!candidates) {
       return
     }
+    const current = providerRef.current
     // 已配置的模型保留原能力设置；新选中的沿用端点返回的元数据。
-    const existing = new Map(provider.models.map((model) => [model.id, model]))
+    const existing = new Map(current.models.map((model) => [model.id, model]))
     const merged = candidates
       .filter((model) => picked.has(model.id))
       .map((model) => existing.get(model.id) ?? model)
     // 端点没列出的手填模型继续保留，不会被一次“获取”清空。
-    for (const model of provider.models) {
+    for (const model of current.models) {
       if (!candidates.some((candidate) => candidate.id === model.id) && model.id.trim()) {
         merged.push(model)
       }
     }
-    setProviderModels(id, merged)
+    setProviderModels(current.id, merged)
     setCandidates(null)
+  }
+
+  return (
+    <>
+      <Modal
+        title={t('providerModelsTitle')}
+        closable
+        width={560}
+        onClose={onClose}
+        footer={
+          <Button size="s" onClick={onClose}>
+            {t('providerManageDone')}
+          </Button>
+        }
+      >
+        <div className={styles.providerModelHead}>
+          <span className={styles.providerFieldLabel}>
+            {t('providerModelCount', { count: provider.models.length })}
+          </span>
+          <div className={styles.providerModelActions}>
+            <button
+              type="button"
+              className={styles.providerLinkButton}
+              disabled={fetching}
+              onClick={() => void fetchModels()}
+            >
+              {fetching ? t('providerFetching') : t('providerFetchModels')}
+            </button>
+          </div>
+        </div>
+        {provider.models.length === 0 ? (
+          <div className={styles.providerModelsEmpty}>{t('providerModelsEmpty')}</div>
+        ) : (
+          <div className={styles.providerModels}>
+            {provider.models.map((model, index) => (
+              <ModelRow key={index} provider={provider} model={model} index={index} />
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className={styles.providerAddModel}
+          onClick={() => addProviderModel(provider.id)}
+        >
+          + {t('providerAddModel')}
+        </button>
+        {result ? <div className={styles.providerError}>{result}</div> : null}
+      </Modal>
+      {candidates ? (
+        <Modal
+          title={t('providerFetchTitle')}
+          closable
+          width={420}
+          onClose={() => setCandidates(null)}
+          footer={
+            <>
+              <Button size="s" variant="outlined" onClick={() => setCandidates(null)}>
+                {t('providerFetchCancel')}
+              </Button>
+              <Button size="s" disabled={picked.size === 0} onClick={adoptPicked}>
+                {t('providerFetchConfirm')}
+              </Button>
+            </>
+          }
+        >
+          <div className={styles.providerCandidates}>
+            <label className={styles.providerCandidateAll}>
+              <Checkbox
+                checked={candidates.length > 0 && candidates.every((model) => picked.has(model.id))}
+                ariaLabel={t('providerFetchSelectAll')}
+                onChange={(checked) =>
+                  setPicked(checked ? new Set(candidates.map((model) => model.id)) : new Set())
+                }
+              />
+              <span>{t('providerFetchSelectAll')}</span>
+              <span className={styles.providerCandidateCount}>
+                {t('providerFetchSelected', { count: picked.size, total: candidates.length })}
+              </span>
+            </label>
+            {candidates.map((model) => (
+              <label key={model.id} className={styles.providerCandidate}>
+                <Checkbox
+                  checked={picked.has(model.id)}
+                  ariaLabel={model.id}
+                  onChange={(checked) =>
+                    setPicked((current) => {
+                      const next = new Set(current)
+                      if (checked) {
+                        next.add(model.id)
+                      } else {
+                        next.delete(model.id)
+                      }
+                      return next
+                    })
+                  }
+                />
+                <span className={styles.providerCandidateId}>{model.id}</span>
+                {model.name && model.name !== model.id ? (
+                  <span className={styles.providerCandidateName}>{model.name}</span>
+                ) : null}
+              </label>
+            ))}
+          </div>
+        </Modal>
+      ) : null}
+    </>
+  )
+}
+
+/** 测试连接的按钮：点击后按钮本身显示结果，1 秒后恢复 */
+const TestConnectionButton = ({ provider }: { provider: CustomProvider }) => {
+  const t = useTranslate()
+  const providerRef = useRef(provider)
+  providerRef.current = provider
+  const [state, setState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [text, setText] = useState('')
+  const timer = useRef<number | undefined>(undefined)
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current)
+    },
+    []
+  )
+
+  const showResult = (ok: boolean, message: string) => {
+    setState(ok ? 'ok' : 'fail')
+    setText(message)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setState('idle'), 1000)
+  }
+
+  const test = async () => {
+    const current = providerRef.current
+    const baseUrl = normalizeBaseUrl(current.baseUrl)
+    if (!baseUrl) {
+      showResult(false, t('providerTestNeedsBaseUrl'))
+      return
+    }
+    if (!isHttpUrl(baseUrl)) {
+      showResult(false, t('providerBaseUrlInvalid'))
+      return
+    }
+    setState('testing')
+    try {
+      await verifyProviderDraft({
+        protocol: current.protocol,
+        baseUrl,
+        apiKey: current.apiKey,
+        headers: current.headers,
+      })
+      showResult(true, t('providerTestOk'))
+    } catch (error) {
+      showResult(false, t('providerTestFailed', { message: describeError(error) }))
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={clsx(
+        styles.providerLinkButton,
+        state === 'ok' && styles.providerTestOkText,
+        state === 'fail' && styles.providerError
+      )}
+      disabled={state === 'testing'}
+      onClick={() => void test()}
+    >
+      {state === 'idle'
+        ? t('providerTest')
+        : state === 'testing'
+          ? t('providerTesting')
+          : text}
+    </button>
+  )
+}
+
+/** 单张提供商卡片 */
+const ProviderCard = ({ id }: { id: string }) => {
+  const t = useTranslate()
+  const provider = useProviders((state) => state.providers.find((item) => item.id === id))
+  const [managing, setManaging] = useState(false)
+  const baseUrl = normalizeBaseUrl(provider?.baseUrl ?? '')
+  const baseUrlInvalid = !!provider?.baseUrl.trim() && !isHttpUrl(baseUrl)
+  if (!provider) {
+    return null
   }
 
   return (
@@ -365,115 +555,29 @@ const ProviderCard = ({ id }: { id: string }) => {
       />
 
       <div className={styles.providerModelHead}>
-        <span className={styles.providerFieldLabel}>{t('providerModelsTitle')}</span>
+        <span className={styles.providerFieldLabel}>
+          {t('providerModelCount', { count: provider.models.length })}
+        </span>
         <div className={styles.providerModelActions}>
-          <button
-            type="button"
-            className={styles.providerLinkButton}
-            disabled={fetching}
-            onClick={() => void fetchModels()}
-          >
-            {fetching ? t('providerFetching') : t('providerFetchModels')}
+          <button type="button" className={styles.providerLinkButton} onClick={() => setManaging(true)}>
+            {t('providerManageModels')}
           </button>
-          <button
-            type="button"
-            className={styles.providerLinkButton}
-            disabled={testing}
-            onClick={() => void testConnection()}
-          >
-            {testing ? t('providerTesting') : t('providerTest')}
-          </button>
+          <TestConnectionButton provider={provider} />
         </div>
       </div>
 
-      {provider.models.length === 0 ? (
-        <div className={styles.providerModelsEmpty}>{t('providerModelsEmpty')}</div>
-      ) : (
-        <div className={styles.providerModels}>
-          {provider.models.map((model, index) => (
-            <ModelRow key={index} provider={provider} model={model} index={index} />
-          ))}
-        </div>
-      )}
-      <button
-        type="button"
-        className={styles.providerAddModel}
-        onClick={() => addProviderModel(id)}
-      >
-        + {t('providerAddModel')}
-      </button>
-
-      {result ? (
-        <div
-          className={clsx(styles.providerResult, result.ok ? styles.providerResultOk : styles.providerError)}
-          role="status"
-        >
-          {result.text}
-        </div>
+      {provider.protocol === 'anthropic-messages' ? (
+        <label className={styles.providerCapability}>
+          <Checkbox
+            checked={provider.filesApi}
+            ariaLabel={t('providerFilesApi')}
+            onChange={(filesApi) => updateProvider(id, { filesApi })}
+          />
+          <span>{t('providerFilesApi')}</span>
+        </label>
       ) : null}
 
-      {candidates ? (
-        <Modal
-          title={t('providerFetchTitle')}
-          closable
-          width={420}
-          onClose={() => setCandidates(null)}
-          footer={
-            <>
-              <Button size="s" variant="outlined" onClick={() => setCandidates(null)}>
-                {t('providerFetchCancel')}
-              </Button>
-              <Button size="s" disabled={picked.size === 0} onClick={adoptPicked}>
-                {t('providerFetchConfirm')}
-              </Button>
-            </>
-          }
-        >
-          <div className={styles.providerCandidates}>
-            <label className={styles.providerCandidateAll}>
-              <Checkbox
-                checked={
-                  candidates.length > 0 &&
-                  candidates.every((model) => picked.has(model.id))
-                }
-                ariaLabel={t('providerFetchSelectAll')}
-                onChange={(checked) =>
-                  setPicked(
-                    checked ? new Set(candidates.map((model) => model.id)) : new Set()
-                  )
-                }
-              />
-              <span>{t('providerFetchSelectAll')}</span>
-              <span className={styles.providerCandidateCount}>
-                {t('providerFetchSelected', { count: picked.size, total: candidates.length })}
-              </span>
-            </label>
-            {candidates.map((model) => (
-              <label key={model.id} className={styles.providerCandidate}>
-                <Checkbox
-                  checked={picked.has(model.id)}
-                  ariaLabel={model.id}
-                  onChange={(checked) =>
-                    setPicked((current) => {
-                      const next = new Set(current)
-                      if (checked) {
-                        next.add(model.id)
-                      } else {
-                        next.delete(model.id)
-                      }
-                      return next
-                    })
-                  }
-                />
-                <span className={styles.providerCandidateId}>{model.id}</span>
-                {model.name && model.name !== model.id ? (
-                  <span className={styles.providerCandidateName}>{model.name}</span>
-                ) : null}
-              </label>
-            ))}
-          </div>
-        </Modal>
-      ) : null}
+      {managing ? <ModelCandidates provider={provider} onClose={() => setManaging(false)} /> : null}
     </div>
   )
 }

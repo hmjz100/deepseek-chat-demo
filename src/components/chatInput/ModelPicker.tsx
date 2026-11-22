@@ -3,14 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useIsMobile } from '../../app/viewport.js'
 import { useTranslate } from '../../i18n/index.js'
 import { setProvider, setThinkingEffort, useSettings, type ThinkingEffort } from '../../services/settings.js'
-import { enabledProviders, useProviders, type CustomProvider, type ProviderModel } from '../../services/providers.js'
+import { useProviders } from '../../services/providers.js'
+import { loadModelsDev, useModelsDev } from '../../services/modelsDev.js'
 import {
-  findCatalogModel,
-  loadModelsDev,
-  resolveModelVendor,
-  useModelsDev,
-  type ModelsDevProvider,
-} from '../../services/modelsDev.js'
+  buildEntries,
+  EFFORTS,
+  matchesModelQuery,
+  useLoadModelCatalog,
+  type ModelEntry,
+} from '../../services/modelCatalog.js'
 import { Popover } from '../base/Popover.js'
 import { VendorLogo } from '../base/VendorLogo.js'
 import { IconCheckOutline16 } from '../base/icons.js'
@@ -22,93 +23,7 @@ import {
 } from '../base/icons.js'
 import styles from './ModelPicker.module.css'
 
-/** 内置 DeepSeek 提供商的模型（请求走官方 Anthropic 兼容接口） */
-const BUILTIN_MODELS = [
-  { id: 'deepseek-flash', name: 'DeepSeek Flash', vendor: 'deepseek' },
-  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', vendor: 'deepseek' },
-]
-
-const EFFORTS: ThinkingEffort[] = ['standard', 'deep', 'max']
-
-export const BUILTIN_PROVIDER_ID = 'deepseek'
-
-/**
- * 搜索归一化：空格、连字符、下划线、斜杠、反斜杠一律忽略，
- * 于是「DeepSeek V4」「DeepSeek-V4」「DeepSeek/V4」都能互相命中。
- */
-export const normalizeModelQuery = (value: string) => value.toLowerCase().replace(/[\s\-_/\\]+/g, '')
-
-export const matchesModelQuery = (model: { id: string; name: string }, query: string) => {
-  const keyword = normalizeModelQuery(query)
-  return keyword === '' || normalizeModelQuery(`${model.name} ${model.id}`).includes(keyword)
-}
-
 type Pane = 'root' | 'model' | 'effort'
-
-export type ModelEntry = {
-  providerId: string
-  providerName: string
-  id: string
-  name: string
-  /** 该模型属于哪家厂商（models.dev 的 logo id），用于显示原厂 logo */
-  vendor: string | null
-  /** 该模型是否支持推理等级（自定义提供商在设置里逐模型声明） */
-  reasoning: boolean
-}
-
-/** 按模型解析厂商；用户在设置里显式选择的图标优先 */
-const resolveCustomVendor = (
-  provider: CustomProvider,
-  model: ProviderModel,
-  catalog: Record<string, ModelsDevProvider>
-): string | null =>
-  model.icon ??
-  resolveModelVendor(
-    {
-      modelId: model.id,
-      modelName: model.name,
-      provider: { id: provider.id, name: provider.name, baseUrl: provider.baseUrl },
-    },
-    catalog
-  )
-
-/** 组装可选模型：内置 DeepSeek + 每个启用的自定义提供商 */
-export const buildEntries = (
-  providers: CustomProvider[],
-  catalog: Record<string, ModelsDevProvider>
-): ModelEntry[] => {
-  const entries: ModelEntry[] = BUILTIN_MODELS.map((model) => {
-    // 名字尽量用目录里的真名；厂商固定是 deepseek，不再靠易错的模型 id 匹配推断
-    const found = findCatalogModel(catalog.deepseek, model.id, catalog)
-    return {
-      providerId: BUILTIN_PROVIDER_ID,
-      providerName: 'DeepSeek',
-      id: model.id,
-      name: found?.model.name ?? model.name,
-      vendor: model.vendor,
-      reasoning: true,
-    }
-  })
-  for (const provider of enabledProviders(providers)) {
-    for (const model of provider.models) {
-      if (!model.id.trim()) {
-        continue
-      }
-      const id = model.id
-      const vendor = resolveCustomVendor(provider, model, catalog)
-      const found = findCatalogModel(vendor ? catalog[vendor] : undefined, id, catalog)
-      entries.push({
-        providerId: provider.id,
-        providerName: provider.name || provider.id,
-        id,
-        name: model.name ?? found?.model.name ?? id,
-        vendor,
-        reasoning: model.reasoning ?? found?.model.reasoning ?? false,
-      })
-    }
-  }
-  return entries
-}
 
 /**
  * 输入框右侧（发送键左侧）的模型与推理等级选择。
@@ -131,17 +46,16 @@ export const ModelPicker = () => {
   // Popover 每次渲染都会回调 onIsOpenChange，必须只在实际打开的那一次重置面板
   const wasOpenRef = useRef(false)
 
-  // 进页面就拉目录：按钮上的模型名要立刻是 models.dev 里的真名，而不是等点了才变
-  useEffect(() => {
-    void loadModelsDev()
-  }, [])
+  // 进页面就拉目录：按钮上的模型名与能力信息要立刻来自 models.dev
+  useLoadModelCatalog()
 
   const entries = useMemo(() => buildEntries(providers, catalog), [providers, catalog])
 
   const current = entries.find((entry) => entry.providerId === providerId && entry.id === model) ?? entries[0]
   const filtered = entries.filter((entry) => matchesModelQuery(entry, query))
-  // 推理等级是逐模型能力：模型不支持时，深度思考开关与强制等级都不展示。
-  const showEffort = thinking && current?.reasoning === true
+  // 推理等级是逐模型能力：模型不支持（或只有一个档位）时，深度思考菜单不展示。
+  const availableEfforts = current?.efforts?.length ? current.efforts : EFFORTS
+  const showEffort = thinking && current?.reasoning === true && availableEfforts.length > 1
 
   // 选中的供应商/模型被删除、禁用，或切换到不支持当前模型时，回落到当前可用条目。
   useEffect(() => {
@@ -167,12 +81,14 @@ export const ModelPicker = () => {
     max: t('thinkingEffortMax'),
   }
 
-  // 当前模型不支持推理时，推理等级不参与请求，回到默认档位
+  // 当前模型不支持推理（或档位变化时），把强度收敛到可用档位
   useEffect(() => {
     if (!showEffort && effort !== 'standard') {
       setThinkingEffort('standard')
+    } else if (showEffort && !availableEfforts.includes(effort)) {
+      setThinkingEffort(availableEfforts[0])
     }
-  }, [showEffort, effort])
+  }, [showEffort, effort, availableEfforts])
 
   const currentLabel = current?.name ?? model
 
@@ -314,7 +230,7 @@ export const ModelPicker = () => {
 
           {pane === 'effort' ? (
             <div className={styles.list}>
-              {EFFORTS.map((level) => (
+              {availableEfforts.map((level) => (
                 <div
                   key={level}
                   role="menuitemradio"

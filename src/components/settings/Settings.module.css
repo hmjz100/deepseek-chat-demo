@@ -609,6 +609,11 @@
   color: var(--dsw-alias-state-success-primary);
 }
 
+/* 测试连接的结果直接替换按钮文字 */
+.providerTestOkText {
+  color: var(--dsw-alias-state-success-primary);
+}
+
 .providerModelHead {
   display: flex;
   align-items: center;

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { canonicalLogoVendor } from './modelsDev.js'
 
 /**
  * 兼容协议（与 DSH 的 pi-ai 协议标识一致）：
@@ -29,6 +30,10 @@ export type ProviderModel = {
   reasoning?: boolean
   /** 该模型是否支持图片输入 */
   supportsImages?: boolean
+  /** 该模型是否支持工具调用 */
+  supportsTools?: boolean
+  /** 端点返回的可用思考强度 id（models.dev 风格，如 low / high / max） */
+  efforts?: string[]
 }
 
 /** 用户自行添加的模型提供商 */
@@ -107,11 +112,21 @@ const normalizeModel = (value: unknown): ProviderModel | null => {
   return {
     id: value.id.trim(),
     ...(name ? { name } : {}),
-    ...(typeof value.icon === 'string' && value.icon.trim() ? { icon: value.icon.trim() } : {}),
+    ...(typeof value.icon === 'string' && value.icon.trim()
+      ? { icon: canonicalLogoVendor(value.icon.trim()) ?? value.icon.trim() }
+      : {}),
     ...(number(value.contextWindow) ? { contextWindow: number(value.contextWindow) } : {}),
     ...(number(value.maxTokens) ? { maxTokens: number(value.maxTokens) } : {}),
     ...(value.reasoning === true ? { reasoning: true } : {}),
     ...(value.supportsImages === true ? { supportsImages: true } : {}),
+    ...(value.supportsTools === true ? { supportsTools: true } : {}),
+    ...(Array.isArray(value.efforts)
+      ? {
+          efforts: value.efforts.filter(
+            (item): item is string => typeof item === 'string' && item.trim() !== ''
+          ),
+        }
+      : {}),
   }
 }
 

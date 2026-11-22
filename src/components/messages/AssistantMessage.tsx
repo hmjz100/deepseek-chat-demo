@@ -11,7 +11,8 @@ import { canContinueReply } from '../../services/chat/reply.js'
 import { continueReply, regenerateReply } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
-import { openSettings } from '../settings/settingsDialogState.js'
+import { openSettings, hasOfficialFeatures } from '../settings/settingsDialogState.js'
+import { useSettings } from '../../services/settings.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { Button } from '../base/Button.js'
@@ -50,6 +51,9 @@ export const AssistantMessage = memo(function AssistantMessage({
 }) {
   const t = useTranslate()
   const view = useReplyView(message, streaming)
+  // 朗读走官方语音接口，没有官方 Key 时不展示
+  useSettings((state) => state.apiKey)
+  const showReadAloud = hasOfficialFeatures()
   const panelEntry = useSearchPanel((state) => state.entry)
   const notice = streaming ? null : describeReply(message)  // 安全拒绝：保留已下发的思考与正文，另外加一条拒答提示（含服务端给的原因）
   const refused = message.stopReason === 'refusal'
@@ -168,7 +172,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                 regenerateReply(sessionId, message.id)
               }}
             />
-            {responseText && !refused ? (
+            {responseText && !refused && showReadAloud ? (
               <ReadAloudButton messageId={message.id} text={responseText} />
             ) : null}
           </div>

@@ -28,6 +28,7 @@
 }
 
 .bubble {
+  position: relative;
   max-width: calc(100% - 88px);
   box-sizing: border-box;
   padding: 10px 16px;
@@ -38,6 +39,12 @@
   background-color: var(--dsw-specific-bubble);
   white-space: pre-wrap;
   word-break: break-word;
+  overflow: hidden;
+}
+
+/* 折叠时给右下角的胶囊留出空间，避免遮住最后一行正文 */
+.bubbleClamped {
+  padding-bottom: 34px;
 }
 
 @media not all and (min-width: 440px) {
@@ -66,33 +73,49 @@
   }
 }
 
-/* 官方「展开消息 / 收起消息」：用户消息超过 192px 时的折叠开关 */
+/* 官网：遮罩 + 右下角小胶囊都在泡泡内部 */
+.collapseFade {
+  pointer-events: none;
+  width: 240px;
+  height: 72px;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  border-bottom-right-radius: 22px;
+  background-image: radial-gradient(
+    140px 64px at right 4px bottom 0,
+    var(--dsw-specific-bubble) 0%,
+    var(--dsw-specific-bubble) 38%,
+    color-mix(in srgb, var(--dsw-specific-bubble) 70%, transparent) 60%,
+    color-mix(in srgb, var(--dsw-specific-bubble) 0%, transparent) 80%
+  );
+}
+
 .collapseButton {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 28px;
-  margin-right: auto;
-  padding: 0 6px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 13px;
-  line-height: 20px;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 30px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 100px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-  transition: color var(--ds-transition-duration) var(--ds-ease-in-out);
-
-  &:hover {
-    color: var(--dsw-alias-label-primary);
-    background-color: var(--dsw-alias-interactive-bg-hover);
-  }
 
   svg {
     width: 14px;
     height: 14px;
     transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);
+  }
+
+  &:hover {
+    color: var(--dsw-alias-label-primary);
   }
 }
 
