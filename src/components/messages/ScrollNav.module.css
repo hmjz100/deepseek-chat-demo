@@ -3,7 +3,7 @@
   position: fixed;
   top: 50%;
   right: 16px;
-  z-index: 5;
+  z-index: 20;
   display: flex;
   align-items: center;
   width: 34px;
@@ -59,7 +59,7 @@
   pointer-events: auto;
 }
 
-/* 上下渐隐，避免列表贴边生硬 */
+/* 上下渐隐，避免列表贴边生硬（官网 _4ce999d：32px 高，20.19% 停止点） */
 .wrapper::before,
 .wrapper::after {
   content: '';
@@ -67,11 +67,16 @@
   right: 1px;
   left: 1px;
   z-index: 2;
-  height: 24px;
+  height: 32px;
   pointer-events: none;
-  background: linear-gradient(var(--dsw-alias-bg-layer-1), transparent);
+  background: linear-gradient(rgb(255, 255, 255) 20.19%, rgba(255, 255, 255, 0) 100%);
   opacity: 0;
   transition: opacity 0.2s;
+}
+
+[data-ds-dark-theme] .wrapper::before,
+[data-ds-dark-theme] .wrapper::after {
+  background: linear-gradient(var(--dsw-alias-bg-layer-1) 20.19%, rgba(35, 35, 36, 0) 100%);
 }
 
 .wrapper::before {

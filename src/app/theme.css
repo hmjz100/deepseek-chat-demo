@@ -130,6 +130,7 @@ body[data-ds-dark-theme] {
   --dsw-static-neutral-bluish-75: rgb(241, 243, 245);
   --dsw-static-neutral-bluish-800: rgb(53, 54, 56);
   --dsw-static-neutral-bluish-850: rgb(44, 44, 46);
+  --dsw-static-neutral-bluish-875: rgb(35, 35, 36);
   --dsw-static-neutral-bluish-900: rgb(27, 27, 28);
   --dsw-static-neutral-bluish-950: rgb(21, 21, 23);
   --dsw-static-neutral-100: rgb(245, 245, 245);
@@ -141,6 +142,8 @@ body[data-ds-dark-theme] {
 
 body {
   --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-00);
+  /* 官网：ScrollNav 小面板背景，浅色与 base 同色 */
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
   /* 官网原值：搜索结果用户头像等的底色 */
@@ -205,6 +208,8 @@ body {
 
 body[data-ds-dark-theme] {
   --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-950);
+  /* 官网：深色 ScrollNav 小面板 bg-layer-1 = neutral-bluish-875 */
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
   --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
   --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-750);

@@ -1,16 +1,20 @@
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 
 /**
  * 官方滚动条（`.ds-scroll-area__gutters`）的复刻：隐藏原生滚动条后，
  * 用一层覆盖在滚动容器上的自绘条来显示位置与进度。
  *
  * 行为与官网一致：
- *   - 条宽 6px、圆角 100px、距右 2px、上下各留 2px/16px；
+ *   - gutter 容器宽度 4px（官网变量），条通过伪元素渲染；
  *   - 容器 hover 时淡入，离开后延迟 1s 淡出（CSS 负责）；
  *   - 悬停整条加宽 2px 并加深颜色（CSS 负责）。
+ *   - bar 可拖动：mousedown 计算进度并同步 scrollTop。
+ *   - z-index: 10（低于 ScrollNav 面板的 5000+，避免遮挡）。
  */
 export const ScrollGutters = ({ targetRef }: { targetRef: RefObject<HTMLElement | null> }) => {
   const [bar, setBar] = useState<{ height: number; top: number } | null>(null)
+  const dragging = useRef(false)
+  const dragStart = useRef<{ y: number; scrollTop: number; barTop: number } | null>(null)
 
   useEffect(() => {
     const el = targetRef.current
@@ -57,12 +61,52 @@ export const ScrollGutters = ({ targetRef }: { targetRef: RefObject<HTMLElement 
     }
   }, [targetRef])
 
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = targetRef.current
+    if (!el || !bar) {
+      return
+    }
+    dragging.current = true
+    dragStart.current = {
+      y: e.clientY,
+      scrollTop: el.scrollTop,
+      barTop: bar.top,
+    }
+    e.preventDefault()
+    e.stopPropagation()
+
+    const onMove = (e: MouseEvent) => {
+      const start = dragStart.current
+      if (!start || !bar) {
+        return
+      }
+      const dy = e.clientY - start.y
+      const { scrollHeight, clientHeight } = el
+      const maxScroll = scrollHeight - clientHeight
+      const maxBarTop = clientHeight - bar.height
+      const progress = Math.min(Math.max((start.barTop + dy) / maxBarTop, 0), 1)
+      el.scrollTop = progress * maxScroll
+    }
+    const onUp = () => {
+      dragging.current = false
+      dragStart.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   return (
     <div className="ds-scroll-area__gutters" aria-hidden>
-      <div className="ds-scroll-area__vertical-gutter" style={{ top: 16, bottom: 2, right: 2, width: 6 }}>
+      <div
+        className="ds-scroll-area__vertical-gutter"
+        style={{ top: 16, bottom: 2, right: 2, width: 4 }}
+      >
         <div
           className="ds-scroll-area__vertical-bar"
           style={bar ? { height: bar.height, top: bar.top, display: 'block' } : { display: 'none' }}
+          onMouseDown={onMouseDown}
         />
       </div>
     </div>
